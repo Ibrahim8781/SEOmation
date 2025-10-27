@@ -1,0 +1,126 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Language {
+  EN
+  DE
+}
+
+enum Platform {
+  BLOG
+  LINKEDIN
+  INSTAGRAM
+}
+
+enum TopicStatus {
+  SUGGESTED
+  ACCEPTED
+  REJECTED
+}
+
+enum ContentStatus {
+  DRAFT
+  READY
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  role          Role           @default(USER)
+  company       String
+  niche         String
+  timezone      String
+  language      Language       @default(EN)
+  preferences   Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  refreshTokens RefreshToken[]
+  topics        Topic[]
+  contents      Content[]
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  tokenHash  String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  userAgent  String?
+  ip         String?
+
+  @@index([userId])
+}
+
+model Topic {
+  id           String       @id @default(uuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  platform     Platform
+  language     Language
+  relevance    Float?
+  isRelevant   Boolean?
+  aiMeta       Json?
+  status       TopicStatus  @default(SUGGESTED)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  contents     Content[]
+
+  @@index([userId, platform, language])
+}
+
+model Content {
+  id               String        @id @default(uuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId          String?
+  topic            Topic?        @relation(fields: [topicId], references: [id])
+  platform         Platform
+  language         Language
+  title            String
+  html             String?
+  text             String?
+  seoMeta          Json?
+  grammarScore     Float?
+  readabilityScore Float?
+  ragScore         Float?
+  aiMeta           Json?
+  status           ContentStatus @default(DRAFT)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([userId, platform, language, status])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
