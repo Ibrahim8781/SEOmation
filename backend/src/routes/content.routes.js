@@ -1,13 +1,37 @@
-import { Router } from 'express';
+import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
-import { generateContentSchema, updateContentSchema } from '../validators/content.schemas.js';
 import { ContentController } from '../controllers/content.controller.js';
 
+const router = express.Router();
 
-const r = Router();
-r.post('/generate', requireAuth(), validate(generateContentSchema), ContentController.generate);
-r.get('/', requireAuth(), ContentController.list);
-r.get('/:id', requireAuth(), ContentController.getById);
-r.put('/:id', requireAuth(), validate(updateContentSchema), ContentController.update);
-export default r;
+/**
+ * POST /api/content/generate
+ * Generate content from topic OR custom prompt
+ */
+router.post('/generate', requireAuth(), ContentController.generate);
+
+/**
+ * GET /api/content
+ * List all content drafts
+ */
+router.get('/', requireAuth(), ContentController.list);
+
+/**
+ * GET /api/content/:id
+ * Get specific content by ID
+ */
+router.get('/:id', requireAuth(), ContentController.getById);
+
+/**
+ * PUT /api/content/:id
+ * Update content draft
+ */
+router.put('/:id', requireAuth(), ContentController.update);
+
+/**
+ * POST /api/content/:id/seo-hints
+ * Get SEO score and hints
+ */
+router.post('/:id/seo-hints', requireAuth(), ContentController.getSeoHints);
+
+export default router;

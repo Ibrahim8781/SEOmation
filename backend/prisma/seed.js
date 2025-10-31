@@ -7,14 +7,14 @@ const prisma = new PrismaClient();
 
 
 async function main() {
-const passwordHash = await bcrypt.hash('Passw0rd!', 12);
+const passwordHash = await bcrypt.hash('admin123', 12);
 
 
 await prisma.user.upsert({
-where: { email: 'admin@seomation.local' },
+where: { email: 'admin123@seomation.com' },
 update: {},
 create: {
-email: 'admin@seomation.local',
+email: 'admin123@seomation.com',
 passwordHash,
 name: 'Admin',
 role: 'ADMIN',
@@ -27,10 +27,10 @@ language: 'EN'
 
 
 await prisma.user.upsert({
-where: { email: 'user@seomation.local' },
+where: { email: 'user@seomation.com' },
 update: {},
 create: {
-email: 'user@seomation.local',
+email: 'user@seomation.com',
 passwordHash,
 name: 'Demo User',
 role: 'USER',
@@ -42,7 +42,8 @@ language: 'EN'
 });
 
 
-console.log('Seed complete. Admin: admin@seomation.local / Passw0rd!');
+
+console.log('Seed complete. Admin: admin123@seomation.com / admin123');
 }
 
 

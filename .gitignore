@@ -1,0 +1,58 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Prisma
+prisma/dev.db
+prisma/dev.db-journal
+*.db-journal
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Logs
+logs/
+*.log
+
+# IDE / Editor files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Temporary / cache
+.tmp/
+.cache/
+.eslintcache
+
+# TypeScript
+*.tsbuildinfo
+
+# System files
+Thumbs.db
+
+.env
+.venv/*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# OS/Editor
+.DS_Store
+.idea/
+.vscode/
