@@ -1,0 +1,24 @@
+.ui-textarea__control {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  padding: 0.95rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(28, 39, 68, 0.08);
+  box-shadow: 0 8px 18px rgba(28, 39, 68, 0.05);
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ui-textarea__control:focus {
+  outline: none;
+  border-color: rgba(47, 84, 235, 0.5);
+  box-shadow: 0 12px 24px rgba(47, 84, 235, 0.18);
+}
+
+.ui-textarea.ui-field--error .ui-textarea__control {
+  border-color: rgba(217, 48, 37, 0.45);
+  box-shadow: 0 12px 24px rgba(217, 48, 37, 0.18);
+}

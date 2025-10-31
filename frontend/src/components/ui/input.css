@@ -1,0 +1,78 @@
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ui-field__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f1f25;
+}
+
+.ui-field__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  border: 1px solid rgba(28, 39, 68, 0.08);
+  box-shadow: 0 8px 18px rgba(28, 39, 68, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ui-field__control:focus-within {
+  border-color: rgba(47, 84, 235, 0.5);
+  box-shadow: 0 12px 24px rgba(47, 84, 235, 0.18);
+}
+
+.ui-field__input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+}
+
+.ui-field__input::placeholder {
+  color: rgba(115, 122, 145, 0.75);
+}
+
+.ui-field__input:focus {
+  outline: none;
+}
+
+.ui-field__message {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.ui-field__message--error {
+  color: #d93025;
+}
+
+.ui-field--error .ui-field__control {
+  border-color: rgba(217, 48, 37, 0.45);
+  box-shadow: 0 12px 24px rgba(217, 48, 37, 0.18);
+}
+
+.ui-field__control--with-icon .ui-field__input {
+  padding-left: 2.75rem;
+}
+
+.ui-field__icon {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-muted);
+  font-size: 1.1rem;
+}
+
+.ui-field__icon--left {
+  left: 0.9rem;
+}
+
+.ui-field__icon--right {
+  right: 0.9rem;
+}

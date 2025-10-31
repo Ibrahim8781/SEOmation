@@ -1,0 +1,29 @@
+.analytics-widget {
+  padding: 0.85rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.analytics-widget header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.analytics-widget h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.analytics-widget header span {
+  font-size: 0.68rem;
+  color: var(--color-muted);
+}
+
+.analytics-widget__chart {
+  width: 100%;
+  height: 190px;
+}

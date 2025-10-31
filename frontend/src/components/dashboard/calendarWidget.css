@@ -1,0 +1,122 @@
+@keyframes calendar-pop {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.calendar-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  animation: calendar-pop 0.25s ease;
+}
+
+.calendar-widget header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.15rem;
+}
+
+.calendar-widget h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.calendar-widget__nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.calendar-widget__nav button {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(47, 84, 235, 0.08);
+  color: #2f54eb;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-size: 0.65rem;
+}
+
+.calendar-widget__nav button:hover {
+  background: rgba(47, 84, 235, 0.12);
+}
+
+.calendar-widget__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.1rem;
+  justify-items: center;
+}
+
+.calendar-widget__day {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  font-weight: 500;
+  font-size: 0.68rem;
+  color: #1f1f25;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.calendar-widget__day--label {
+  cursor: default;
+  font-size: 0.58rem;
+  color: var(--color-muted);
+  font-weight: 600;
+  height: 18px;
+}
+
+.calendar-widget__day--muted {
+  color: rgba(115, 122, 145, 0.3);
+  font-size: 0.62rem;
+}
+
+.calendar-widget__day--today {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(47, 84, 235, 0.25);
+}
+
+.calendar-widget__day:not(.calendar-widget__day--label):hover {
+  background: rgba(47, 84, 235, 0.08);
+  color: var(--color-primary);
+  transform: scale(1.05);
+}
+
+.calendar-widget__cta {
+  margin-top: 0.4rem;
+  align-self: center;
+  padding: 0.38rem 0.85rem;
+  border-radius: 6px;
+  border: none;
+  background: rgba(47, 84, 235, 0.1);
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+  white-space: nowrap;
+}
+
+.calendar-widget__cta:hover {
+  transform: translateY(-1px);
+  background: rgba(47, 84, 235, 0.12);
+}

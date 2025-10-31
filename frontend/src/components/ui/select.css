@@ -1,0 +1,38 @@
+.ui-select__wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(28, 39, 68, 0.08);
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(28, 39, 68, 0.05);
+}
+
+.ui-select__control {
+  appearance: none;
+  border: none;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ui-select__control:focus {
+  outline: none;
+}
+
+.ui-select__wrapper:focus-within {
+  border-color: rgba(47, 84, 235, 0.5);
+  box-shadow: 0 12px 24px rgba(47, 84, 235, 0.18);
+}
+
+.ui-select__chevron {
+  position: absolute;
+  right: 1rem;
+  font-size: 1rem;
+  color: var(--color-muted);
+  pointer-events: none;
+}
