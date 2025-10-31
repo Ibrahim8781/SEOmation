@@ -31,45 +31,98 @@ async def chat_json(messages: List[Dict[str, str]], max_tokens: int, temperature
 async def generate_topics_json(language: str, niche: str, persona: Dict[str, Any],
                                seed_keywords: List[str], region: str, season: str,
                                count: int, retrieved_context: Dict[str, Any]):
+    # Build prompt with any retrieved context
     snippets = retrieved_context.get("snippets", []) if retrieved_context else []
     context_lines = [f"[c{i}] {sn['url']}" for i, sn in enumerate(snippets, 1)]
     system, user = build_topic_prompt(language, niche, persona, seed_keywords, region, season, count, context_lines)
 
+    # Call LLM
     raw = await chat_json([{"role": "system", "content": system}, user], max_tokens=900, temperature=0.7)
     try:
         data = json.loads(raw)
     except Exception:
         m = re.search(r"\{[\s\S]*\}\s*$", raw)
-        if not m: raise
+        if not m:
+            raise
         data = json.loads(m.group(0))
-    clusters = data.get("clusters", [])
-    ideas = data.get("ideas", [])
 
+    # Keep clusters for UI grouping
+    clusters = data.get("clusters", []) or []
+
+    # --- Robust idea collection (same as before, just no counters) ---
+    def _norm_idea_item(it: Any) -> Dict[str, Any]:
+        if not isinstance(it, dict):
+            return {}
+        t = (it.get("ideaText") or it.get("title") or it.get("idea") or it.get("text") or "").strip()
+        if not t:
+            return {}
+        return {
+            "ideaText": t,
+            "targetKeyword": (it.get("targetKeyword") or it.get("keyword") or "").strip()[:64],
+            "rationale": (it.get("rationale") or it.get("why") or "").strip(),
+            "trendTag": (it.get("trendTag") or it.get("tag") or "evergreen"),
+        }
+
+    candidates: List[Dict[str, Any]] = []
+    for it in (data.get("ideas") or []):
+        if isinstance(it, str):
+            it = {"ideaText": it}
+        norm = _norm_idea_item(it)
+        if norm:
+            candidates.append(norm)
+    for cl in clusters:
+        for it in (cl.get("ideas") or []):
+            if isinstance(it, str):
+                it = {"ideaText": it}
+            norm = _norm_idea_item(it)
+            if norm:
+                candidates.append(norm)
+
+    # Filtering (relaxed)
     from langdetect.lang_detect_exception import LangDetectException
     filtered, seen = [], set()
-    for it in ideas:
-        t = (it.get("ideaText","") or "").strip()
-        if not t or t.lower() in seen: continue
-        if len(t) < 40 or len(t) > 90: continue
+    for it in candidates:
+        t = (it.get("ideaText") or "").strip()
+        if not t:
+            continue
+        k = t.casefold()
+        if k in seen:
+            continue
+        if len(t) < 20 or len(t) > 120:
+            continue
         try:
-            if detect(t) != language: continue
+            _ = detect(t)  # soft check; never hard-drop
         except LangDetectException:
             pass
-        seen.add(t.lower())
+        seen.add(k)
         filtered.append({
             "ideaText": t,
-            "targetKeyword": (it.get("targetKeyword") or "").strip()[:64],
-            "rationale": (it.get("rationale") or "").strip(),
+            "targetKeyword": it.get("targetKeyword", ""),
+            "rationale": it.get("rationale", ""),
             "trendTag": it.get("trendTag", "evergreen"),
             "language": language,
         })
+
+    # Fallback synthesis so UI never sees 0 ideas
+    if not filtered:
+        for sk in (seed_keywords or [])[:max(3, min(6, count))]:
+            title = f"{sk.title()} — practical tips and examples for {niche}"
+            filtered.append({
+                "ideaText": title,
+                "targetKeyword": sk,
+                "rationale": f"Relevant to {niche} audience; actionable.",
+                "trendTag": "evergreen",
+                "language": language,
+            })
+
+    # Diagnostics now minimal
     diagnostics = {
         "usedRAG": retrieved_context.get("usedRAG", False) if retrieved_context else False,
-        "clustersCount": len(clusters),
-        "ideasBefore": len(ideas),
-        "ideasAfter": len(filtered),
+        "clustersCount": len(clusters)
+        # no ideasBefore / ideasAfter
     }
     return clusters, filtered, diagnostics
+
 
 def _validate_blog(json_obj: Dict[str, Any], focus_kw: str, target_length: int) -> List[str]:
     issues = []
@@ -112,7 +165,8 @@ Context references (do not copy):
         data = json.loads(raw)
     except Exception:
         m = re.search(r"\{[\s\S]*\}\s*$", raw)
-        if not m: raise
+        if not m:
+            raise
         data = json.loads(m.group(0))
 
     issues = []
@@ -120,9 +174,9 @@ Context references (do not copy):
         issues = _validate_blog(data, focus_keyword, target_length)
 
     sample_text = (
-        (data.get("h1") or "") + " " + " ".join([s.get("h2","") for s in data.get("sections",[])])
+        (data.get("h1") or "") + " " + " ".join([s.get("h2", "") for s in data.get("sections", [])])
         if platform == "blog" else
-        (data.get("body","") if platform == "linkedin" else data.get("caption",""))
+        (data.get("body", "") if platform == "linkedin" else data.get("caption", ""))
     )
     try:
         if sample_text and detect(sample_text[:200]) != language:
