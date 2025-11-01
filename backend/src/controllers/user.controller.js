@@ -11,7 +11,8 @@ res.json(safe);
 },
 async updateMe(req, res, next) {
 try {
-const user = await UserService.updateProfile(req.user.id, req.body);
+const payload = req.validated?.body ?? req.body;
+const user = await UserService.updateProfile(req.user.id, payload);
 const { passwordHash, ...safe } = user;
 res.json(safe);
 } catch (e) { next(e); }

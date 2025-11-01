@@ -23,28 +23,78 @@ export const TopicController = {
      */
     async generate(req, res, next) {
         try {
-            const { platform, language, context } = req.body;
+            const payload = req.validated?.body ?? req.body ?? {};
             const userId = req.user.id;
 
-            // Extract niche from context or user data
-            const niche = context?.niche || req.user.niche;
+            const profile = req.user.preferences?.onboarding?.businessProfile ?? null;
 
-            // Prepare persona from context
-            const persona = {
-                role: context?.audience || 'content creator',
-                pains: context?.pains || []
+            const requestedPlatform = payload.platform || profile?.primaryPlatforms?.[0] || 'BLOG';
+            const platform = requestedPlatform?.toUpperCase?.() || 'BLOG';
+
+            const requestedLanguage = payload.language || profile?.language || req.user.language || 'EN';
+            const language = String(requestedLanguage).toUpperCase();
+
+            const baseContext = payload.context ?? {};
+
+            const resolvedSeedKeywords = Array.isArray(baseContext.seedKeywords)
+                ? baseContext.seedKeywords
+                : typeof baseContext.seedKeywords === 'string'
+                    ? baseContext.seedKeywords
+                        .split(',')
+                        .map((item) => item.trim())
+                        .filter(Boolean)
+                    : profile?.seedKeywords ?? [];
+
+            const resolvedPainsRaw = baseContext.pains ?? baseContext.painPoints ?? profile?.audiencePainPoints ?? [];
+            const resolvedPains = Array.isArray(resolvedPainsRaw)
+                ? resolvedPainsRaw
+                : String(resolvedPainsRaw || '')
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean);
+
+            const includeTrendsValue = baseContext.includeTrends ?? profile?.includeTrends ?? true;
+            const includeTrends =
+                typeof includeTrendsValue === 'string'
+                    ? includeTrendsValue.toLowerCase() !== 'false'
+                    : Boolean(includeTrendsValue);
+
+            const countValue = baseContext.count ?? 12;
+            const countNumber = Number.parseInt(countValue, 10);
+            const resolvedCount = Number.isFinite(countNumber)
+                ? Math.min(40, Math.max(5, countNumber))
+                : 12;
+
+            const resolvedContext = {
+                ...baseContext,
+                platform,
+                businessName: baseContext.businessName ?? profile?.businessName ?? req.user.company,
+                niche: baseContext.niche ?? profile?.niche ?? req.user.niche,
+                audience: baseContext.audience ?? profile?.targetAudience ?? 'content creator',
+                tone: baseContext.tone ?? profile?.toneOfVoice ?? req.user.tone ?? 'friendly',
+                seedKeywords: resolvedSeedKeywords,
+                pains: resolvedPains,
+                region: baseContext.region ?? profile?.primaryRegion ?? null,
+                season: baseContext.season ?? profile?.seasonalFocus ?? null,
+                includeTrends,
+                count: resolvedCount
             };
 
-            // Call FastAPI to generate topics
+            const niche = resolvedContext.niche || req.user.niche;
+
+            const persona = {
+                role: resolvedContext.audience || 'content creator',
+                pains: resolvedContext.pains || []
+            };
+
             const topics = await FastAPIService.generateTopics(
                 userId,
                 language,
                 niche,
                 persona,
-                context
+                resolvedContext
             );
 
-            // Save generated topics to database (temporarily stored for user selection)
             const saved = await TopicService.createManyFromAi(
                 userId,
                 platform,
@@ -52,7 +102,6 @@ export const TopicController = {
                 topics
             );
 
-            // Return topics to frontend for user to select
             res.status(201).json({
                 items: saved,
                 meta: {

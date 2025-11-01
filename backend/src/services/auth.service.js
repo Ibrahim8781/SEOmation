@@ -96,4 +96,3 @@ export const AuthService = {
   logout
 };
 
-console.log('auth.service loaded — keys:', Object.keys(AuthService));

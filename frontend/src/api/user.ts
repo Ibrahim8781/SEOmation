@@ -1,4 +1,4 @@
-import type { Language, User } from '@/types';
+import type { Language, User, UserPreferences } from '@/types';
 import { getApiClient } from './client';
 
 const api = getApiClient();
@@ -9,6 +9,8 @@ export interface UpdateProfilePayload {
   niche?: string;
   timezone?: string;
   language?: Language;
+  tone?: string;
+  preferences?: UserPreferences | null;
 }
 
 export const UserAPI = {

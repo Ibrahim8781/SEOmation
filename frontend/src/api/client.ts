@@ -2,9 +2,23 @@ import axios, { AxiosHeaders, type AxiosError, type InternalAxiosRequestConfig }
 import type { AuthResponse, AuthTokens } from '@/types';
 import { API_BASE_URL } from '@/utils/constants';
 
+const DEFAULT_TIMEOUT_MS = 60000;
+
+const apiTimeoutMs = (() => {
+  const rawValue = import.meta.env?.VITE_API_TIMEOUT_MS;
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return parsed;
+})();
+
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 20000
+  timeout: apiTimeoutMs
 });
 
 type RefreshHandler = (payload: AuthResponse | null) => void;

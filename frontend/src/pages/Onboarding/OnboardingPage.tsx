@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FiArrowRight, FiCheckCircle, FiTarget } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
@@ -48,6 +48,11 @@ export function OnboardingPage() {
       targetAudience: '',
       publishingCadence: 'WEEKLY',
       preferredContentTypes: ['SEO blog articles'],
+      seedKeywords: [user?.niche, user?.company].filter(Boolean).join(', ') || 'SEO strategy',
+      audiencePainPoints: '',
+      primaryRegion: 'Global',
+      seasonalFocus: '',
+      includeTrends: true,
       additionalNotes: ''
     };
   }, [businessProfile, user]);
@@ -60,7 +65,7 @@ export function OnboardingPage() {
     watch,
     reset
   } = useForm<OnboardingFormValues>({
-    resolver: zodResolver(onboardingSchema),
+    resolver: zodResolver(onboardingSchema) as any,
     defaultValues
   });
 
@@ -97,18 +102,26 @@ export function OnboardingPage() {
     }
   };
 
-  const onSubmit = async (values: OnboardingFormValues) => {
+  const onSubmit: SubmitHandler<OnboardingFormValues> = async (values) => {
     if (!user) return;
     setSubmitError(null);
     setIsSubmitting(true);
     try {
+      const profilePayload = onboardingValuesToProfile(values);
       await updateProfile({
         company: values.businessName,
         niche: values.niche,
         language: values.language,
-        timezone: values.timezone
+        timezone: values.timezone,
+        tone: values.toneOfVoice,
+        preferences: {
+          onboarding: {
+            completed: true,
+            businessProfile: profilePayload
+          }
+        }
       });
-      completeOnboarding(onboardingValuesToProfile(values));
+      completeOnboarding(profilePayload);
       navigate('/', { replace: true });
     } catch (error) {
       setSubmitError(extractErrorMessage(error, 'Failed to save your profile. Please try again.'));
@@ -209,6 +222,15 @@ export function OnboardingPage() {
             />
           </div>
 
+          <div className="onboarding-group">
+            <Textarea
+              label="Strategic keywords"
+              placeholder="SEO automation, content operations, SaaS onboarding..."
+              error={errors.seedKeywords?.message}
+              {...register('seedKeywords')}
+            />
+          </div>
+
           <div className="onboarding-group onboarding-grid">
             <Input
               label="Tone of voice"
@@ -228,6 +250,38 @@ export function OnboardingPage() {
               error={errors.publishingCadence?.message}
               {...register('publishingCadence')}
             />
+          </div>
+
+          <div className="onboarding-group">
+            <Textarea
+              label="Audience pain points"
+              placeholder="Slow production cycles, limited marketing bandwidth, inconsistent messaging..."
+              error={errors.audiencePainPoints?.message}
+              {...register('audiencePainPoints')}
+            />
+          </div>
+
+          <div className="onboarding-group onboarding-grid">
+            <Input
+              label="Primary region or market"
+              placeholder="Global, North America, DACH..."
+              error={errors.primaryRegion?.message}
+              {...register('primaryRegion')}
+            />
+            <Input
+              label="Seasonal focus (optional)"
+              placeholder="Q4 launches, Back-to-school, Evergreen"
+              error={errors.seasonalFocus?.message}
+              {...register('seasonalFocus')}
+            />
+          </div>
+
+          <div className="onboarding-group onboarding-toggle">
+            <label className="onboarding-label">Include trend-based topic ideas</label>
+            <label className="onboarding-checkbox">
+              <input type="checkbox" {...register('includeTrends')} />
+              <span>Keep an eye on news and trending angles</span>
+            </label>
           </div>
 
           <div className="onboarding-group">

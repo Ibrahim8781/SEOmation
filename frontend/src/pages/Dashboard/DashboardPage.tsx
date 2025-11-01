@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { FiClock, FiFileText, FiPenTool } from 'react-icons/fi';
+import { FiClock, FiFileText, FiPenTool, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { TopicAPI } from '@/api/topics';
@@ -13,6 +14,7 @@ import { CalendarWidget } from '@/components/dashboard/CalendarWidget';
 import { TopicCard } from '@/components/dashboard/TopicCard';
 import { WriterCard } from '@/components/dashboard/WriterCard';
 import { FullScreenLoader } from '@/components/common/FullScreenLoader';
+import { Button } from '@/components/ui/Button';
 import './dashboard.css';
 
 const numberFormatter = Intl.NumberFormat('en-US', {
@@ -60,7 +62,12 @@ function buildFallbackTopics(userId: string, topics: Topic[], niche?: string, au
     language: selectedLanguage,
     relevance: 0.85 - index * 0.08,
     isRelevant: true,
-    aiMeta: null,
+    targetKeyword: title.toLowerCase().split(' ').slice(0, 3).join(' '),
+    rationale: `Suggested to engage ${descriptors} within ${theme}.`,
+    aiMeta: {
+      trendTag: 'evergreen',
+      source: 'fallback'
+    },
     status: 'SUGGESTED',
     createdAt: now,
     updatedAt: now
@@ -90,10 +97,18 @@ function buildAnalyticsData(content: ContentItem[]) {
 export function DashboardPage() {
   const { user } = useAuth();
   const { businessProfile } = useOnboarding();
+  const navigate = useNavigate();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingTopics, setGeneratingTopics] = useState(false);
+  const [topicGenerationError, setTopicGenerationError] = useState<string | null>(null);
+  const [attemptedAutoGenerate, setAttemptedAutoGenerate] = useState(false);
+
+  useEffect(() => {
+    setAttemptedAutoGenerate(false);
+  }, [businessProfile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -105,6 +120,8 @@ export function DashboardPage() {
         if (isMounted) {
           setTopics(topicsRes.data.items);
           setContent(contentRes.data.items);
+          setTopicGenerationError(null);
+          setAttemptedAutoGenerate(topicsRes.data.items.length > 0);
         }
       } catch (err) {
         if (isMounted) {
@@ -120,6 +137,61 @@ export function DashboardPage() {
       isMounted = false;
     };
   }, [user]);
+
+  const generateTopics = useCallback(async () => {
+    if (!user || !businessProfile) return;
+    setTopicGenerationError(null);
+    setGeneratingTopics(true);
+    try {
+      const platform = businessProfile.primaryPlatforms?.[0] ?? 'BLOG';
+      const language = businessProfile.language ?? user.language;
+      const context = {
+        businessName: businessProfile.businessName,
+        niche: businessProfile.niche ?? user.niche,
+        audience: businessProfile.targetAudience,
+        tone: businessProfile.toneOfVoice ?? user.tone,
+        seedKeywords: businessProfile.seedKeywords,
+        pains: businessProfile.audiencePainPoints,
+        region: businessProfile.primaryRegion,
+        season: businessProfile.seasonalFocus,
+        includeTrends: businessProfile.includeTrends
+      };
+
+      const { data } = await TopicAPI.generate({
+        platform,
+        language,
+        context
+      });
+      setTopics(data.items);
+      setTopicGenerationError(null);
+    } catch (err) {
+      setTopicGenerationError(
+        extractErrorMessage(err, 'Unable to refresh topic suggestions right now.')
+      );
+    } finally {
+      setGeneratingTopics(false);
+    }
+  }, [businessProfile, user]);
+
+  useEffect(() => {
+    if (
+      !loading &&
+      businessProfile &&
+      topics.length === 0 &&
+      !generatingTopics &&
+      !attemptedAutoGenerate
+    ) {
+      setAttemptedAutoGenerate(true);
+      void generateTopics();
+    }
+  }, [loading, businessProfile, topics.length, generatingTopics, attemptedAutoGenerate, generateTopics]);
+
+  const handleTopicSelect = useCallback(
+    (topic: Topic) => {
+      navigate('/writer', { state: { topic } });
+    },
+    [navigate]
+  );
 
   const totalWords = useMemo(
     () => content.reduce((sum, item) => sum + countWords(item.text), 0),
@@ -204,12 +276,33 @@ export function DashboardPage() {
 
       <section className="dashboard-topics">
         <div className="dashboard-section-heading">
-          <h2>Suggested Topics for you</h2>
-          <p>Curated using your business profile and recent performance insights.</p>
+          <div>
+            <h2>Suggested Topics for you</h2>
+            <p>Curated using your business profile and recent performance insights.</p>
+          </div>
+          {businessProfile && (
+            <Button
+              type="button"
+              variant="ghost"
+              
+              leftIcon={<FiRefreshCw />}
+              isLoading={generatingTopics}
+              disabled={generatingTopics}
+              onClick={() => {
+                setAttemptedAutoGenerate(true);
+                void generateTopics();
+              }}
+            >
+              {generatingTopics ? 'Refreshing…' : 'Refresh topics'}
+            </Button>
+          )}
         </div>
+        {topicGenerationError && (
+          <p className="dashboard-topics__error">{topicGenerationError}</p>
+        )}
         <div className="dashboard-topics__grid">
           {suggestedTopics.map((topic) => (
-            <TopicCard key={topic.id} topic={topic} />
+            <TopicCard key={topic.id} topic={topic} onSelect={handleTopicSelect} />
           ))}
         </div>
       </section>

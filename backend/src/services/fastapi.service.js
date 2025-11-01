@@ -81,28 +81,49 @@ class FastAPIService {
 
         const response = await this.request('/topic/suggest', payload);
 
-        // Transform FastAPI response to match your DB schema
-        // Extract ideas from clusters and return as flat array
+        const diagnostics = response?.diagnostics || {};
+        const seen = new Set();
         const items = [];
-        if (response.clusters) {
-            response.clusters.forEach(cluster => {
-                cluster.ideas?.forEach(idea => {
-                    items.push({
-                        title: idea.ideaText,
-                        targetKeyword: idea.targetKeyword,
-                        rationale: idea.rationale,
-                        trendTag: idea.trendTag,
-                        relevance: 0.85, // Default relevance score
-                        isRelevant: true,
-                        aiMeta: {
-                            cluster: cluster.label,
-                            trendTag: idea.trendTag,
-                            diagnostics: response.diagnostics
-                        }
-                    });
-                });
+        const pushIdea = (idea, clusterLabel = null) => {
+            if (!idea) return;
+            const title = (idea.ideaText || idea.title || idea.text || '').trim();
+            if (!title) return;
+            const key = title.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            const targetKeyword = (idea.targetKeyword || '').trim() || null;
+            const rationale = (idea.rationale || '').trim() || null;
+            const trendTag = idea.trendTag || null;
+            const relevance = typeof idea.relevance === 'number' ? idea.relevance : typeof idea.score === 'number' ? idea.score : 0.85;
+
+            const aiMeta = {
+                cluster: clusterLabel,
+                diagnostics,
+                source: clusterLabel ? 'cluster' : 'idea',
+                trendTag,
+                seedKeywords: payload.seedKeywords
+            };
+
+            items.push({
+                title,
+                targetKeyword,
+                rationale,
+                trendTag,
+                platform: context?.platform || 'BLOG',
+                language,
+                relevance,
+                isRelevant: true,
+                aiMeta
             });
-        }
+        };
+
+        (response?.clusters || []).forEach((cluster) => {
+            const label = cluster?.label || null;
+            (cluster?.ideas || []).forEach((idea) => pushIdea(idea, label));
+        });
+
+        (response?.ideas || []).forEach((idea) => pushIdea(idea, null));
 
         return items;
     }
@@ -112,10 +133,12 @@ class FastAPIService {
      * Called by: POST /api/content/generate (both topicId and prompt flows combined)
      */
     async generateContent(userId, platform, language, topicOrIdea, focusKeyword, tone = 'friendly', targetLength = 1200, styleGuide = []) {
+        const normalizedPlatform = String(platform || 'blog').toLowerCase();
+        const normalizedLanguage = String(language || 'EN').toLowerCase();
         const payload = {
             userId,
-            platform,
-            language,
+            platform: normalizedPlatform,
+            language: normalizedLanguage,
             topicOrIdea,
             tone,
             targetLength,
@@ -127,20 +150,29 @@ class FastAPIService {
 
         const response = await this.request('/content/generate', payload);
 
-        // Transform FastAPI response to match your DB schema
+        const contentForEditor = response?.contentForEditor || {};
+        const structured = contentForEditor.structured || null;
+        const html = contentForEditor.html || '';
+        const plainText = contentForEditor.plainText || '';
+        const diagnostics = response?.diagnostics || null;
+        const metrics = response?.metrics || {};
+
         return {
             title: topicOrIdea,
-            html: response.contentForEditor?.html || '',
-            text: response.contentForEditor?.plainText || '',
+            html,
+            text: plainText,
+            structured,
             seoMeta: {
-                keywords: this.extractKeywords(response.contentForEditor?.plainText || ''),
+                keywords: this.extractKeywords(plainText),
                 focusKeyword
             },
-            grammarScore: 0.95, // Placeholder - FastAPI can add this
-            readabilityScore: 0.8, // Placeholder - FastAPI can add this
-            ragScore: 0.9, // Placeholder - FastAPI can add this
+            grammarScore: metrics.grammarScore ?? null,
+            readabilityScore: metrics.readabilityScore ?? null,
+            ragScore: metrics.ragScore ?? null,
             aiMeta: {
-                diagnostics: response.diagnostics
+                diagnostics,
+                contentStructure: structured,
+                platform
             }
         };
     }

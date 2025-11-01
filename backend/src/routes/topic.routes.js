@@ -1,6 +1,8 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
 import { TopicController } from '../controllers/topic.controller.js';
+import { generateTopicsSchema } from '../validators/topic.schemas.js';
 
 const router = express.Router();
 
@@ -46,7 +48,7 @@ const router = express.Router();
  *   }
  * }
  */
-router.post('/generate', requireAuth(), TopicController.generate);
+router.post('/generate', requireAuth(), validate(generateTopicsSchema), TopicController.generate);
 
 /**
  * GET /api/topics

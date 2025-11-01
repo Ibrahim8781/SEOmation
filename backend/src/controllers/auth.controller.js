@@ -1,8 +1,6 @@
 import { AuthService } from '../services/auth.service.js';
 import { HTTP } from '../utils/httpStatus.js';
 
-console.log('AUTH SERVICE KEYS:', Object.keys(AuthService || {}));
-console.log('AUTH SERVICE REFRESH TYPE:', typeof (AuthService && AuthService.refresh));
 export const AuthController = {
 async register(req, res, next) {
 try {

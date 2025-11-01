@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { FiCheck, FiCopy, FiImage, FiSend } from 'react-icons/fi';
+import { FiCheck, FiCopy, FiImage, FiSend, FiX } from 'react-icons/fi';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
+import { Input } from '@/components/ui/Input';
+import { useAuth } from '@/hooks/useAuth';
+import { useOnboarding } from '@/hooks/useOnboarding';
+import { ContentAPI, type GenerateContentPayload, type SeoHint } from '@/api/content';
+import type { Topic } from '@/types';
+import { extractErrorMessage } from '@/utils/error';
 import './blogWriter.css';
 
 type ChatMessage = {
@@ -16,65 +23,46 @@ type ChatMessage = {
 type ViewMode = 'html' | 'plain';
 
 const languageOptions = [
-  { label: 'English', value: 'en' },
-  { label: 'German', value: 'de' },
-  { label: 'Spanish', value: 'es' },
-  { label: 'French', value: 'fr' },
-  { label: 'Italian', value: 'it' }
+  { label: 'English', value: 'EN' },
+  { label: 'German', value: 'DE' }
 ];
-
-const sampleBlogHtml = `<article>
-  <h1>How to Craft an SEO-Ready Blog Post That Actually Ranks</h1>
-  <p>Publishing frequently is not enough. The blogs that win search traffic today are intentional about keyword alignment, search intent, and on-page experience. This guide walks through a repeatable framework you can reuse for every post.</p>
-  <h2>1. Lead with a search-focused outline</h2>
-  <ul>
-    <li>Start with a primary keyword mapped to your business goal.</li>
-    <li>Add supporting keywords that answer follow-up questions.</li>
-    <li>Group related ideas into scannable sections with descriptive H2s.</li>
-  </ul>
-  <h2>2. Write for the reader first</h2>
-  <p>Answer the question quickly, promise value, and highlight the unique angle you bring. Format for skim readers with short paragraphs, bullets, and descriptive subheadings.</p>
-  <h2>3. Optimize on-page signals</h2>
-  <p>Include a compelling meta description, compress image assets, and link to two to three trusted external sources. Close with a clear call-to-action and an internal link to a conversion page.</p>
-</article>`;
-
-const sampleBlogPlain = `Title: How to Craft an SEO-Ready Blog Post That Actually Ranks
-
-Introduction:
-Publishing frequently is not enough. To attract organic traffic you need posts that match search intent, answer follow-up questions, and provide a satisfying reader experience.
-
-Section 1 - Lead with a search-focused outline:
-- Pick one primary keyword that maps to your business goal.
-- Layer in secondary keywords that cover related questions.
-- Organize the outline into short sections with helpful, descriptive headings.
-
-Section 2 - Write for the reader first:
-Answer the core question in the opening, promise value, and highlight the unique angle you bring. Keep paragraphs short, incorporate bullets, and use transition phrases to keep readers engaged.
-
-Section 3 - Optimize on-page signals:
-Craft a clear meta description, compress images, link to credible sources, and direct readers to a relevant conversion page within your site. Encourage action with a compelling CTA.`;
-
-const sampleInstagramCaption =
-  'New blog drop: the playbook we use to publish SEO-ready posts that actually rank. Swipe to grab the outline template and save this for your next content sprint. #ContentMarketing #SEOtips';
-
-const sampleLinkedinDescription =
-  'We just published a practical walkthrough on building SEO-first blog posts: keyword mapping, outlining fast, on-page optimizations, and CTAs that move the needle. Perfect for marketers tightening their organic strategy this quarter.';
 
 function getTimestamp() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export function BlogWriterPage() {
+  const location = useLocation();
+  const { user } = useAuth();
+  const { businessProfile } = useOnboarding();
+  const initialTopic = (location.state as { topic?: Topic } | undefined)?.topic ?? null;
+
+  const welcomeMessage = useMemo(() => {
+    if (businessProfile) {
+      const audience = businessProfile.targetAudience || 'your audience';
+      return `I'm ready to write for your ${businessProfile.niche} brand and ${audience}. Share a prompt or tweak the focus keyword to begin.`;
+    }
+    return 'Tell me about the topic, keywords, tone, and any calls-to-action. I will shape an SEO-ready blog post for you.';
+  }, [businessProfile]);
+
   const [viewMode, setViewMode] = useState<ViewMode>('html');
-  const [language, setLanguage] = useState(languageOptions[0].value);
+  const [language, setLanguage] = useState<'EN' | 'DE'>(
+    (initialTopic?.language as 'EN' | 'DE' | undefined) ??
+      businessProfile?.language ??
+      user?.language ??
+      'EN'
+  );
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(initialTopic);
   const [prompt, setPrompt] = useState('');
+  const [focusKeyword, setFocusKeyword] = useState(
+    initialTopic?.targetKeyword ?? initialTopic?.title ?? ''
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'assistant-welcome',
       role: 'assistant',
-      content:
-        'Tell me about the topic, keywords, tone, and any calls-to-action. I will shape an SEO-ready blog post for you.',
+      content: welcomeMessage,
       timestamp: getTimestamp()
     }
   ]);
@@ -84,8 +72,13 @@ export function BlogWriterPage() {
   const [linkedinCopy, setLinkedinCopy] = useState('');
   const [includeInstagram, setIncludeInstagram] = useState(true);
   const [includeLinkedIn, setIncludeLinkedIn] = useState(true);
+  const [seoScore, setSeoScore] = useState<number | null>(null);
+  const [seoHints, setSeoHints] = useState<SeoHint[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [copyMode, setCopyMode] = useState<'idle' | 'copied'>('idle');
   const copyResetTimer = useRef<number | null>(null);
+  const previousTopicIdRef = useRef<string | null>(initialTopic?.id ?? null);
 
   useEffect(() => {
     return () => {
@@ -95,39 +88,117 @@ export function BlogWriterPage() {
     };
   }, []);
 
-  const handlePromptSubmit = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].id === 'assistant-welcome') {
+        return [{ ...prev[0], content: welcomeMessage }];
+      }
+      return prev;
+    });
+  }, [welcomeMessage]);
+
+  useEffect(() => {
+    if (selectedTopic?.id && previousTopicIdRef.current !== selectedTopic.id) {
+      setFocusKeyword(selectedTopic.targetKeyword ?? selectedTopic.title);
+      if (selectedTopic.language && language !== selectedTopic.language) {
+        setLanguage(selectedTopic.language);
+      }
+      setPrompt('');
+      previousTopicIdRef.current = selectedTopic.id;
+    }
+    if (!selectedTopic) {
+      previousTopicIdRef.current = null;
+    }
+  }, [selectedTopic, language]);
+
+  const handlePromptSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!prompt.trim()) return;
+    if (isGenerating) return;
+
+    const trimmedPrompt = prompt.trim();
+    const trimmedKeyword = focusKeyword.trim();
+
+    if (!selectedTopic && !trimmedPrompt) {
+      setFormError('Add a prompt or pick a suggested topic to start writing.');
+      return;
+    }
+
+    if (!trimmedKeyword) {
+      setFormError('Provide a focus keyword so the draft can optimise around it.');
+      return;
+    }
+
+    setFormError(null);
+    setApiError(null);
+
+    const userContent = selectedTopic
+      ? `Use the topic "${selectedTopic.title}" with focus keyword "${trimmedKeyword}".`
+      : trimmedPrompt;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: prompt.trim(),
+      content: userContent,
       timestamp: getTimestamp()
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setPrompt('');
     setIsGenerating(true);
+    setCopyMode('idle');
 
-    window.setTimeout(() => {
+    const payload: GenerateContentPayload = {
+      platform: 'BLOG',
+      language,
+      includeInstagram,
+      includeLinkedIn
+    };
+
+    if (selectedTopic) {
+      payload.topicId = selectedTopic.id;
+    } else {
+      payload.prompt = trimmedPrompt;
+      payload.focusKeyword = trimmedKeyword;
+    }
+
+    try {
+      const { data } = await ContentAPI.generate(payload);
+      const variants = data.variants ?? {};
+      setBlogHtml(data.item.html ?? '');
+      setBlogPlain(data.item.text ?? '');
+      setLanguage(data.item.language as 'EN' | 'DE');
+      setSeoScore(data.seo?.score ?? null);
+      setSeoHints(data.seo?.hints ?? []);
+      setInstagramCopy(includeInstagram ? variants.instagram?.text ?? '' : '');
+      setLinkedinCopy(includeLinkedIn ? variants.linkedin?.text ?? '' : '');
+      setFocusKeyword(data.focusKeyword);
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: `Draft ready! SEO score ${data.seo?.score ?? '—'}${
+          variants.linkedin || variants.instagram ? ' with social captions included.' : '.'
+        }`,
+        timestamp: getTimestamp()
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      if (!selectedTopic) {
+        setPrompt('');
+      }
+    } catch (error) {
+      const message = extractErrorMessage(error, 'Unable to generate the draft right now.');
+      setApiError(message);
       setMessages((prev) => [
         ...prev,
         {
-          id: `assistant-${Date.now()}`,
+          id: `assistant-error-${Date.now()}`,
           role: 'assistant',
-          content:
-            "Here's a fresh draft aligned to your prompt. Feel free to tweak the keywords or ask for a different angle.",
+          content: `I ran into an issue: ${message}`,
           timestamp: getTimestamp()
         }
       ]);
-
-      setBlogHtml(sampleBlogHtml);
-      setBlogPlain(sampleBlogPlain);
-      setInstagramCopy(includeInstagram ? sampleInstagramCaption : '');
-      setLinkedinCopy(includeLinkedIn ? sampleLinkedinDescription : '');
+    } finally {
       setIsGenerating(false);
-    }, 600);
+      setCopyMode('idle');
+    }
   };
 
   const handleCopy = async () => {
@@ -144,11 +215,12 @@ export function BlogWriterPage() {
         copyResetTimer.current = window.setTimeout(() => setCopyMode('idle'), 2000);
       }
     } catch {
-      // Clipboard failures can be surfaced once backend integration is in place.
+      // Clipboard failures can be surfaced with a toast once global notifications are available.
     }
   };
 
   const hasBlogDraft = Boolean(blogHtml || blogPlain);
+  const hasSeoInsights = seoScore !== null || seoHints.length > 0;
 
   return (
     <div className="blog-writer-page">
@@ -164,7 +236,7 @@ export function BlogWriterPage() {
           <Select
             label="Language"
             value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+            onChange={(event) => setLanguage(event.target.value as 'EN' | 'DE')}
             options={languageOptions}
           />
           <Button type="button" variant="secondary" leftIcon={<FiImage />}>
@@ -172,6 +244,32 @@ export function BlogWriterPage() {
           </Button>
         </div>
       </header>
+
+      {selectedTopic && (
+        <div className="blog-writer-topic glass-card">
+          <div className="blog-writer-topic__details">
+            <span className="blog-writer-topic__label">Topic</span>
+            <strong>{selectedTopic.title}</strong>
+            {selectedTopic.targetKeyword && (
+              <span className="blog-writer-topic__keyword">
+                Focus: {selectedTopic.targetKeyword}
+              </span>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            
+            leftIcon={<FiX />}
+            onClick={() => {
+              setSelectedTopic(null);
+              setFocusKeyword('');
+            }}
+          >
+            Clear topic
+          </Button>
+        </div>
+      )}
 
       <main className="blog-writer-body">
         <section className="blog-writer-output glass-card">
@@ -187,7 +285,9 @@ export function BlogWriterPage() {
               >
                 <span className="blog-writer-switch__thumb" />
               </button>
-              <span className={clsx('blog-writer-switch-label', viewMode === 'plain' && 'is-active')}>Readable</span>
+              <span className={clsx('blog-writer-switch-label', viewMode === 'plain' && 'is-active')}>
+                Readable
+              </span>
             </div>
 
             <Button
@@ -200,6 +300,8 @@ export function BlogWriterPage() {
               {copyMode === 'copied' ? 'Copied' : 'Copy Draft'}
             </Button>
           </div>
+
+          {apiError && <div className="blog-writer-alert">{apiError}</div>}
 
           <div className="blog-writer-output__content">
             {!hasBlogDraft && (
@@ -221,6 +323,22 @@ export function BlogWriterPage() {
             )}
           </div>
 
+          {hasSeoInsights && (
+            <div className="blog-writer-seo glass-card">
+              <div className="blog-writer-seo__score">
+                <span>SEO score</span>
+                <strong>{seoScore ?? '—'}</strong>
+              </div>
+              {seoHints.length > 0 && (
+                <ul className="blog-writer-seo__hints">
+                  {seoHints.map((hint) => (
+                    <li key={`${hint.type}-${hint.msg}`}>{hint.msg}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {(includeInstagram || includeLinkedIn) && hasBlogDraft && (
             <div className="blog-writer-snippets">
               {includeInstagram && instagramCopy && (
@@ -231,13 +349,12 @@ export function BlogWriterPage() {
                       type="button"
                       variant="ghost"
                       onClick={async () => {
-                        if (!instagramCopy) return;
                         try {
                           if ('clipboard' in navigator) {
                             await navigator.clipboard.writeText(instagramCopy);
                           }
                         } catch {
-                          // Clipboard failures can be surfaced once backend integration is in place.
+                          // clipboard failure ignored for now
                         }
                       }}
                       leftIcon={<FiCopy />}
@@ -257,13 +374,12 @@ export function BlogWriterPage() {
                       type="button"
                       variant="ghost"
                       onClick={async () => {
-                        if (!linkedinCopy) return;
                         try {
                           if ('clipboard' in navigator) {
                             await navigator.clipboard.writeText(linkedinCopy);
                           }
                         } catch {
-                          // Clipboard failures can be surfaced once backend integration is in place.
+                          // clipboard failure ignored for now
                         }
                       }}
                       leftIcon={<FiCopy />}
@@ -294,13 +410,28 @@ export function BlogWriterPage() {
           </div>
 
           <form className="blog-writer-chat__composer" onSubmit={handlePromptSubmit}>
-            <Textarea
-              name="prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Describe the blog you need, target keywords, tone, and audience..."
-              rows={4}
+            <Input
+              label="Focus keyword"
+              value={focusKeyword}
+              onChange={(event) => {
+                setFocusKeyword(event.target.value);
+                if (formError) setFormError(null);
+              }}
+              placeholder="e.g. SaaS onboarding checklist"
             />
+            {!selectedTopic && (
+              <Textarea
+                name="prompt"
+                value={prompt}
+                onChange={(event) => {
+                  setPrompt(event.target.value);
+                  if (formError) setFormError(null);
+                }}
+                placeholder="Describe the blog you need, target keywords, tone, and audience..."
+                rows={4}
+              />
+            )}
+            {formError && <p className="blog-writer-chat__error">{formError}</p>}
             <div className="blog-writer-chat__options">
               <label className="blog-writer-checkbox">
                 <input

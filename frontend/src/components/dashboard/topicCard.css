@@ -60,6 +60,23 @@
   font-size: 0.66rem;
 }
 
+.topic-card__meta--sub {
+  color: rgba(74, 81, 103, 0.8);
+  font-size: 0.62rem;
+}
+
+.topic-card__trend {
+  margin-top: 0.1rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(47, 84, 235, 0.08);
+  color: var(--color-primary);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .topic-card__cta {
   margin-top: auto;
   align-self: flex-start;

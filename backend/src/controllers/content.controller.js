@@ -25,18 +25,26 @@ export const ContentController = {
    */
   async generate(req, res, next) {
     try {
-      const { platform, language, topicId, prompt } = req.body;
+      const payload = req.validated?.body ?? req.body ?? {};
       const userId = req.user.id;
+      const profile = req.user.preferences?.onboarding?.businessProfile ?? null;
 
-      // Validate input: either topicId or prompt must be provided
-      if (!topicId && !prompt) {
-        throw new ApiError(400, 'Either topicId or prompt must be provided');
-      }
+      const platform = (payload.platform || 'BLOG').toUpperCase();
+      const requestedLanguage = payload.language || profile?.language || req.user.language || 'EN';
+      let language = String(requestedLanguage).toUpperCase();
 
+      const includeLinkedIn = toBoolean(payload.includeLinkedIn, false);
+      const includeInstagram = toBoolean(payload.includeInstagram, false);
+
+      const tone = payload.tone || profile?.toneOfVoice || req.user.tone || 'friendly';
+      const targetLength = resolveTargetLength(payload.targetLength);
+      const styleGuide = buildStyleGuide(profile);
+
+      const topicId = payload.topicId || null;
+      const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : '';
+      let focusKeyword = typeof payload.focusKeyword === 'string' ? payload.focusKeyword.trim() : null;
       let topicTitle = null;
-      let focusKeyword = null;
 
-      // If topicId provided, fetch the topic and verify ownership
       if (topicId) {
         const topic = await prisma.topic.findUnique({
           where: { id: topicId }
@@ -47,37 +55,125 @@ export const ContentController = {
         }
 
         topicTitle = topic.title;
-        focusKeyword = topic.targetKeyword || topic.title;
-      } else {
-        // If prompt provided, use it as the topic title
+        focusKeyword = focusKeyword || topic.targetKeyword || topic.title;
+        if (!payload.language && topic.language) {
+          language = topic.language;
+        }
+      } else if (prompt) {
         topicTitle = prompt;
-        focusKeyword = prompt;
+        focusKeyword = focusKeyword || prompt;
+      } else {
+        throw new ApiError(400, 'Either topicId or prompt must be provided');
       }
 
-      // Get user's tone preference (default: friendly)
-      const tone = req.user.tone || 'friendly';
-
-      // Call FastAPI to generate content
-      const draft = await FastAPIService.generateContent(
+      const blogDraft = await FastAPIService.generateContent(
         userId,
         platform,
         language,
         topicTitle,
         focusKeyword,
         tone,
-        1200, // targetLength
-        [] // styleGuideBullets
+        targetLength,
+        styleGuide
       );
 
-      // Save generated content to database
+      const { structured: blogStructure, ...blogPayload } = blogDraft;
+
       const saved = await ContentService.createDraft(userId, {
-        ...draft,
+        ...blogPayload,
         platform,
         language,
-        topicId: topicId || null
+        topicId
       });
 
-      res.status(HTTP.CREATED).json(saved);
+      const variantResults = {};
+      const variantTasks = [];
+
+      if (includeLinkedIn) {
+        variantTasks.push(
+          FastAPIService.generateContent(
+            userId,
+            'LINKEDIN',
+            language,
+            topicTitle,
+            focusKeyword,
+            tone,
+            400,
+            styleGuide
+          )
+            .then((draft) => {
+              variantResults.linkedin = extractVariant(draft);
+            })
+            .catch((error) => {
+              console.warn('[FastAPI] LinkedIn variant failed', error.message);
+            })
+        );
+      }
+
+      if (includeInstagram) {
+        variantTasks.push(
+          FastAPIService.generateContent(
+            userId,
+            'INSTAGRAM',
+            language,
+            topicTitle,
+            focusKeyword,
+            tone,
+            180,
+            styleGuide
+          )
+            .then((draft) => {
+              variantResults.instagram = extractVariant(draft);
+            })
+            .catch((error) => {
+              console.warn('[FastAPI] Instagram variant failed', error.message);
+            })
+        );
+      }
+
+      if (variantTasks.length) {
+        await Promise.allSettled(variantTasks);
+      }
+
+      const definedVariants = Object.fromEntries(
+        Object.entries(variantResults).filter(([, value]) => Boolean(value))
+      );
+
+      if (Object.keys(definedVariants).length > 0) {
+        const updated = await ContentService.updateOwned(saved.id, userId, {
+          aiMeta: {
+            ...(saved.aiMeta ?? {}),
+            social: definedVariants
+          }
+        });
+        if (updated) {
+          Object.assign(saved, updated);
+        }
+      }
+
+      let seo = null;
+      try {
+        seo = await FastAPIService.getSeoHints(
+          platform,
+          language,
+          focusKeyword,
+          saved.html || saved.text || ''
+        );
+      } catch (seoError) {
+        console.warn('[FastAPI] SEO hints failed', seoError.message);
+      }
+
+      res.status(HTTP.CREATED).json({
+        item: saved,
+        focusKeyword,
+        topicTitle,
+        blog: {
+          structured: blogStructure,
+          diagnostics: blogDraft.aiMeta?.diagnostics ?? null
+        },
+        variants: definedVariants,
+        seo
+      });
     } catch (e) {
       next(e);
     }
@@ -116,7 +212,8 @@ export const ContentController = {
    */
   async update(req, res, next) {
     try {
-      const updated = await ContentService.updateOwned(req.params.id, req.user.id, req.body);
+      const payload = req.validated ?? { params: req.params, body: req.body };
+      const updated = await ContentService.updateOwned(payload.params.id, req.user.id, payload.body);
       if (!updated) throw new ApiError(404, 'Content not found');
       res.json(updated);
     } catch (e) {
@@ -135,8 +232,9 @@ export const ContentController = {
    */
   async getSeoHints(req, res, next) {
     try {
-      const { focusKeyword } = req.body;
-      const contentId = req.params.id;
+      const payload = req.validated ?? { params: req.params, body: req.body };
+      const { focusKeyword } = payload.body;
+      const contentId = payload.params.id;
 
       // Fetch content to verify ownership
       const content = await ContentService.getByIdOwned(contentId, req.user.id);
@@ -164,3 +262,58 @@ export const ContentController = {
     }
   }
 };
+
+function toBoolean(value, fallback = false) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return Boolean(value);
+}
+
+function resolveTargetLength(value) {
+  if (value === undefined || value === null) return 1200;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 1200;
+  return Math.min(3000, Math.max(600, parsed));
+}
+
+function buildStyleGuide(profile) {
+  if (!profile) return [];
+  const bullets = [];
+  if (profile.contentGoals) {
+    bullets.push(`Content goals: ${profile.contentGoals}`);
+  }
+  if (profile.targetAudience) {
+    bullets.push(`Target audience: ${profile.targetAudience}`);
+  }
+  if (profile.publishingCadence) {
+    bullets.push(`Publishing cadence: ${profile.publishingCadence}`);
+  }
+  if (Array.isArray(profile.preferredContentTypes) && profile.preferredContentTypes.length) {
+    bullets.push(`Preferred content types: ${profile.preferredContentTypes.join(', ')}`);
+  }
+  if (profile.additionalNotes) {
+    bullets.push(`Additional notes: ${profile.additionalNotes}`);
+  }
+  if (Array.isArray(profile.seedKeywords) && profile.seedKeywords.length) {
+    bullets.push(`Important keywords: ${profile.seedKeywords.join(', ')}`);
+  }
+  if (profile.primaryRegion) {
+    bullets.push(`Primary region: ${profile.primaryRegion}`);
+  }
+  return bullets;
+}
+
+function extractVariant(draft) {
+  if (!draft) return null;
+  return {
+    html: draft.html,
+    text: draft.text,
+    structured: draft.structured ?? null,
+    diagnostics: draft.aiMeta?.diagnostics ?? null
+  };
+}

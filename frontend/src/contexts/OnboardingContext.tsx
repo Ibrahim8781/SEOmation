@@ -32,6 +32,15 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setIsOnboarded(false);
       return;
     }
+
+    const onboardingPrefs = user.preferences?.onboarding;
+    if (onboardingPrefs?.businessProfile) {
+      setBusinessProfile(onboardingPrefs.businessProfile);
+      setIsOnboarded(Boolean(onboardingPrefs.completed));
+      storeOnboardingState(user.id, onboardingPrefs.businessProfile, Boolean(onboardingPrefs.completed));
+      return;
+    }
+
     const stored = loadOnboardingState(user.id);
     setBusinessProfile(stored.profile ?? null);
     setIsOnboarded(stored.completed);
