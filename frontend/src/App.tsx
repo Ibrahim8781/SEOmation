@@ -6,6 +6,10 @@ import { BlogWriterPage } from '@/pages/BlogWriter/BlogWriterPage';
 import { LoginPage } from '@/pages/Auth/LoginPage';
 import { SignupPage } from '@/pages/Auth/SignupPage';
 import { OnboardingPage } from '@/pages/Onboarding/OnboardingPage';
+import { ContentListPage } from '@/pages/Content/ContentListPage';
+import { ContentEditorPage } from '@/pages/Content/ContentEditorPage';
+import { IntegrationsPage } from '@/pages/Settings/IntegrationsPage';
+import { SchedulePage } from '@/pages/Schedule/SchedulePage';
 
 export default function App() {
   return (
@@ -14,6 +18,10 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="writer" element={<BlogWriterPage />} />
+          <Route path="content" element={<ContentListPage />} />
+          <Route path="content/:id" element={<ContentEditorPage />} />
+          <Route path="settings/integrations" element={<IntegrationsPage />} />
+          <Route path="schedule" element={<SchedulePage />} />
         </Route>
         <Route path="/onboarding" element={<OnboardingPage />} />
       </Route>

@@ -25,6 +25,12 @@ enum Platform {
   INSTAGRAM
 }
 
+enum IntegrationPlatform {
+  WORDPRESS
+  LINKEDIN
+  INSTAGRAM
+}
+
 enum TopicStatus {
   SUGGESTED
   ACCEPTED
@@ -36,6 +42,22 @@ enum ContentStatus {
   READY
   PUBLISHED
   ARCHIVED
+}
+
+enum ImageRole {
+  featured
+  inline
+  thumbnail
+  instagram_main
+  gallery
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 model User {
@@ -56,6 +78,8 @@ model User {
   refreshTokens RefreshToken[]
   topics        Topic[]
   contents      Content[]
+  imageAssets   ImageAsset[]
+  integrations  PlatformIntegration[]
 }
 
 model RefreshToken {
@@ -104,7 +128,11 @@ model Content {
   title            String
   html             String?
   text             String?
+  metaDescription  String?
+  primaryKeyword   String?
+  secondaryKeywords String[]     @default([])
   seoMeta          Json?
+  seoSummary       Json?
   grammarScore     Float?
   readabilityScore Float?
   ragScore         Float?
@@ -112,6 +140,9 @@ model Content {
   status           ContentStatus @default(DRAFT)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+
+  images           ContentImageLink[]
+  scheduleJobs     ScheduleJob[]
 
   @@index([userId, platform, language, status])
 }
@@ -126,4 +157,82 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
+}
+
+model ImageAsset {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt    String?
+  url       String
+  altText   String?
+  width     Int?
+  height    Int?
+  format    String?
+  provider  String?
+  aiMeta    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  links     ContentImageLink[]
+}
+
+model ContentImageLink {
+  id        String    @id @default(uuid())
+  contentId String
+  content   Content   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  imageId   String
+  image     ImageAsset @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  role      ImageRole @default(inline)
+  position  Int?
+  createdAt DateTime @default(now())
+
+  @@unique([contentId, imageId, role])
+}
+
+model PlatformIntegration {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  IntegrationPlatform
+  accessToken  String
+  refreshToken String?
+  expiresAt DateTime?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scheduleJobs ScheduleJob[]
+
+  @@unique([userId, platform])
+}
+
+model ScheduleJob {
+  id            String             @id @default(uuid())
+  contentId     String
+  content       Content            @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  integrationId String
+  integration   PlatformIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  platform      IntegrationPlatform
+  media         Json?
+  scheduledTime DateTime
+  status        ScheduleStatus     @default(SCHEDULED)
+  attempts      Int                @default(0)
+  lastError     String?
+  result        PublishResult?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([scheduledTime, status])
+  @@index([contentId, integrationId])
+}
+
+model PublishResult {
+  id          String       @id @default(uuid())
+  jobId       String       @unique
+  job         ScheduleJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  externalId  String?
+  publishedAt DateTime?
+  response    Json?
+  createdAt   DateTime     @default(now())
 }

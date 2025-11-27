@@ -1,0 +1,58 @@
+.integrations-page {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.integrations-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.integrations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.integration-card {
+  padding: 16px;
+  border-radius: var(--radius-md);
+}
+
+.integration-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.integration-card__header h3 {
+  margin: 0 0 6px;
+}
+
+.integration-card__header p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.integration-card__meta {
+  margin: 8px 0;
+  color: var(--color-muted);
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.integration-card__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.integrations-error {
+  padding: 10px;
+  color: #a8071a;
+  background: #fff1f0;
+  border: 1px solid #ffa39e;
+}

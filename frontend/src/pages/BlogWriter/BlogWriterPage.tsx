@@ -72,6 +72,10 @@ export function BlogWriterPage() {
   const [linkedinCopy, setLinkedinCopy] = useState('');
   const [includeInstagram, setIncludeInstagram] = useState(true);
   const [includeLinkedIn, setIncludeLinkedIn] = useState(true);
+  const [includeImage, setIncludeImage] = useState(false);
+  const [includeLinkedInImage, setIncludeLinkedInImage] = useState(false);
+  const [includeInstagramImage, setIncludeInstagramImage] = useState(false);
+  const [imagePrompt, setImagePrompt] = useState('');
   const [seoScore, setSeoScore] = useState<number | null>(null);
   const [seoHints, setSeoHints] = useState<SeoHint[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -150,7 +154,11 @@ export function BlogWriterPage() {
       platform: 'BLOG',
       language,
       includeInstagram,
-      includeLinkedIn
+      includeLinkedIn,
+      includeImage,
+      includeLinkedInImage,
+      includeInstagramImage,
+      imagePrompt: imagePrompt || selectedTopic?.title || trimmedPrompt || focusKeyword
     };
 
     if (selectedTopic) {
@@ -239,8 +247,8 @@ export function BlogWriterPage() {
             onChange={(event) => setLanguage(event.target.value as 'EN' | 'DE')}
             options={languageOptions}
           />
-          <Button type="button" variant="secondary" leftIcon={<FiImage />}>
-            Generate Image with AI
+          <Button type="button" variant="secondary" leftIcon={<FiImage />} onClick={() => setIncludeImage((v) => !v)}>
+            {includeImage ? 'Images on' : 'Generate images'}
           </Button>
         </div>
       </header>
@@ -453,6 +461,38 @@ export function BlogWriterPage() {
             <Button type="submit" rightIcon={<FiSend />} isLoading={isGenerating} disabled={isGenerating}>
               {isGenerating ? 'Generating...' : 'Send Prompt'}
             </Button>
+            <div className="blog-writer-chat__options">
+              <label className="blog-writer-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeImage}
+                  onChange={(event) => setIncludeImage(event.target.checked)}
+                />
+                <span>Generate blog image</span>
+              </label>
+              <label className="blog-writer-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeLinkedInImage}
+                  onChange={(event) => setIncludeLinkedInImage(event.target.checked)}
+                />
+                <span>Generate LinkedIn image</span>
+              </label>
+              <label className="blog-writer-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeInstagramImage}
+                  onChange={(event) => setIncludeInstagramImage(event.target.checked)}
+                />
+                <span>Generate Instagram image</span>
+              </label>
+              <Input
+                label="Image prompt"
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                placeholder="Optional image prompt"
+              />
+            </div>
           </form>
         </section>
       </main>

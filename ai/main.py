@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import topics, content, seo
+from routers import topics, content, seo, image
 
 app = FastAPI(title="SEOmation ML Service", version="1.2.0")
 
@@ -17,3 +17,4 @@ def health():
 app.include_router(topics.router, prefix="/topic", tags=["topic"])
 app.include_router(content.router, prefix="/content", tags=["content"])
 app.include_router(seo.router, prefix="/seo", tags=["seo"])
+app.include_router(image.router, prefix="/image", tags=["image"])

@@ -4,6 +4,8 @@ import {
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
+  FiClock,
+  FiFileText,
   FiEdit3,
   FiHome,
   FiLogOut,
@@ -26,6 +28,16 @@ const primaryNav = [
     label: 'Blog Writer',
     icon: <FiEdit3 />,
     to: '/writer'
+  },
+  {
+    label: 'Content',
+    icon: <FiFileText />,
+    to: '/content'
+  },
+  {
+    label: 'Schedule',
+    icon: <FiClock />,
+    to: '/schedule'
   }
 ];
 
@@ -105,10 +117,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       <div className="app-sidebar__footer">
-        <button type="button" className="app-sidebar__footer-btn">
+        <NavLink
+          to="/settings/integrations"
+          className={({ isActive }) =>
+            isActive ? 'app-sidebar__footer-btn app-sidebar__footer-btn--active' : 'app-sidebar__footer-btn'
+          }
+        >
           <FiSettings />
           <span className="app-sidebar__label">Settings</span>
-        </button>
+        </NavLink>
         <Button variant="ghost" onClick={logout} leftIcon={<FiLogOut />} className="app-sidebar__logout">
           <span className="app-sidebar__label">Log out</span>
         </Button>

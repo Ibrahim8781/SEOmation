@@ -29,7 +29,7 @@ Rules:
 - Meta description 140-160 chars including {focus_kw}
 - Target length ~{target_length} words (±15%)
 - Provide 1-3 image prompts + ALT text; placeholders internalLinks[]/externalLinks[]
-Return JSON: title, h1, sections:[{{h2, body}}], faqs:[{{q,a}}], meta:{{description, slug}}, images:[{{prompt, alt}}], links:{{internal[], external[]}}"""
+Return JSON: title, h1, sections:[{{h2, body}}],  meta:{{description, slug}}, images:[{{prompt, alt}}], links:{{internal[], external[]}}"""
 
 
 def linkedin_system(language: str) -> str:

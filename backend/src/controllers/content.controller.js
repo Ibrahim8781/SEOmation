@@ -1,5 +1,6 @@
 import FastAPIService from '../services/fastapi.service.js';
 import { ContentService } from '../services/content.service.js';
+import { ImageService } from '../services/image.service.js';
 import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
@@ -35,6 +36,10 @@ export const ContentController = {
 
       const includeLinkedIn = toBoolean(payload.includeLinkedIn, false);
       const includeInstagram = toBoolean(payload.includeInstagram, false);
+      const includeImage = toBoolean(payload.includeImage, false);
+      const includeLinkedInImage = toBoolean(payload.includeLinkedInImage, false);
+      const includeInstagramImage = toBoolean(payload.includeInstagramImage, false);
+      const imagePrompt = payload.imagePrompt || topicTitle || focusKeyword || payload.prompt || '';
 
       const tone = payload.tone || profile?.toneOfVoice || req.user.tone || 'friendly';
       const targetLength = resolveTargetLength(payload.targetLength);
@@ -85,6 +90,19 @@ export const ContentController = {
         language,
         topicId
       });
+
+      // Optional: attach images for the main draft
+      if (includeImage) {
+        try {
+          await ImageService.generateAndAttach(saved.id, userId, {
+            prompt: imagePrompt,
+            count: 1,
+            role: 'featured'
+          });
+        } catch (imgErr) {
+          console.warn('[Image] Blog image generation failed', imgErr.message);
+        }
+      }
 
       const variantResults = {};
       const variantTasks = [];
@@ -148,6 +166,31 @@ export const ContentController = {
         });
         if (updated) {
           Object.assign(saved, updated);
+        }
+      }
+
+      // Attach images for variants if requested
+      if (includeLinkedInImage && definedVariants.linkedin) {
+        try {
+          await ImageService.generateAndAttach(saved.id, userId, {
+            prompt: imagePrompt,
+            count: 1,
+            role: 'thumbnail'
+          });
+        } catch (e) {
+          console.warn('[Image] LinkedIn image generation failed', e.message);
+        }
+      }
+
+      if (includeInstagramImage && definedVariants.instagram) {
+        try {
+          await ImageService.generateAndAttach(saved.id, userId, {
+            prompt: imagePrompt,
+            count: 1,
+            role: 'instagram_main'
+          });
+        } catch (e) {
+          console.warn('[Image] Instagram image generation failed', e.message);
         }
       }
 

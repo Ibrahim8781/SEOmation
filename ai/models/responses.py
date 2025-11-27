@@ -17,3 +17,14 @@ class ContentGenerateResponse(BaseModel):
 class SeoHintResponse(BaseModel):
     score: int
     hints: List[Dict[str, str]]
+
+class GeneratedImage(BaseModel):
+    url: str
+    base64: str
+    size: str
+    provider: str
+    altText: str
+
+class ImageGenerateResponse(BaseModel):
+    altText: str
+    images: List[GeneratedImage]

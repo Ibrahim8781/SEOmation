@@ -34,3 +34,10 @@ class SeoHintRequest(BaseModel):
     language: str
     focusKeyword: str
     content: str
+
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    style: Optional[str] = None
+    sizes: List[str] = []
+    count: int = Field(default=1, ge=1, le=6)
+    language: str = "en"

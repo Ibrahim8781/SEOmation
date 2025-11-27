@@ -1,0 +1,113 @@
+.schedule-page {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.schedule-header h1 {
+  margin: 0;
+}
+
+.schedule-header p {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+}
+
+.schedule-table {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.schedule-table__row {
+  display: grid;
+  grid-template-columns: 0.8fr 1.5fr 1fr 0.9fr 0.8fr;
+  gap: 10px;
+  padding: 12px 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.schedule-table__head {
+  background: #f7f8fc;
+  font-weight: 600;
+}
+
+.pill {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.pill-wordpress {
+  background: #e6f4ff;
+  color: #0958d9;
+}
+
+.pill-linkedin {
+  background: #e6f7ff;
+  color: #096dd9;
+}
+
+.pill-instagram {
+  background: #fff1f0;
+  color: #c41d7f;
+}
+
+.status-scheduled {
+  background: #fff7e6;
+  color: #d46b08;
+}
+
+.status-running {
+  background: #e6f7ff;
+  color: #0958d9;
+}
+
+.status-completed {
+  background: #f6ffed;
+  color: #237804;
+}
+
+.status-failed {
+  background: #fff1f0;
+  color: #a8071a;
+}
+
+.status-cancelled {
+  background: #f0f0f0;
+  color: #595959;
+}
+
+.schedule-error {
+  padding: 12px;
+  color: #a8071a;
+  border: 1px solid #ffa39e;
+  background: #fff1f0;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .schedule-table__row {
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: auto;
+  }
+}

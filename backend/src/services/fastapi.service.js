@@ -198,6 +198,21 @@ class FastAPIService {
     }
 
     /**
+     * Generate images + alt text from FastAPI
+     */
+    async generateImages(prompt, { style = null, sizes = ['1024x1024'], count = 1, language = 'en' } = {}) {
+        const payload = {
+            prompt,
+            style,
+            sizes,
+            count,
+            language
+        };
+
+        return this.request('/image/generate', payload);
+    }
+
+    /**
      * Mock responses for testing without FastAPI running
      */
     getMockResponse(endpoint, payload) {
@@ -264,6 +279,21 @@ class FastAPIService {
                     { type: 'length', msg: 'Content length is optimal' },
                     { type: 'keyword', msg: `Include focus keyword "${payload.focusKeyword}" more naturally` }
                 ]
+            };
+        }
+
+        if (endpoint === '/image/generate') {
+            const dataUrl =
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+            return {
+                altText: `Mock image for ${payload.prompt}`,
+                images: (payload.sizes || ['1024x1024']).map((size, idx) => ({
+                    url: dataUrl,
+                    base64: dataUrl.split(',')[1],
+                    size,
+                    provider: 'mock',
+                    position: idx
+                }))
             };
         }
 

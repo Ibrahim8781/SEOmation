@@ -17,12 +17,16 @@ topicId: payload.topicId || null,
 title: payload.title,
 html: payload.html || null,
 text: payload.text || null,
-seoMeta: payload.seoMeta || null,
-grammarScore: payload.grammarScore || null,
-readabilityScore: payload.readabilityScore || null,
-ragScore: payload.ragScore || null,
-aiMeta: payload.aiMeta || null,
-status: 'DRAFT'
+ metaDescription: payload.metaDescription || null,
+ primaryKeyword: payload.primaryKeyword || null,
+ secondaryKeywords: Array.isArray(payload.secondaryKeywords) ? payload.secondaryKeywords : [],
+ seoMeta: payload.seoMeta || null,
+ seoSummary: payload.seoSummary || null,
+ grammarScore: payload.grammarScore || null,
+ readabilityScore: payload.readabilityScore || null,
+ ragScore: payload.ragScore || null,
+ aiMeta: payload.aiMeta || null,
+ status: 'DRAFT'
 }
 });
 },

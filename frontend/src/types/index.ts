@@ -1,8 +1,11 @@
 export type Role = 'USER' | 'ADMIN';
 export type Language = 'EN' | 'DE';
 export type Platform = 'BLOG' | 'LINKEDIN' | 'INSTAGRAM';
+export type IntegrationPlatform = 'WORDPRESS' | 'LINKEDIN' | 'INSTAGRAM';
 export type TopicStatus = 'SUGGESTED' | 'ACCEPTED' | 'REJECTED';
 export type ContentStatus = 'DRAFT' | 'READY' | 'PUBLISHED' | 'ARCHIVED';
+export type ImageRole = 'featured' | 'inline' | 'thumbnail' | 'instagram_main' | 'gallery';
+export type ScheduleStatus = 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 export interface BusinessProfile {
   businessName: string;
@@ -101,7 +104,11 @@ export interface ContentItem {
   title: string;
   html: string | null;
   text: string | null;
+  metaDescription?: string | null;
+  primaryKeyword?: string | null;
+  secondaryKeywords?: string[];
   seoMeta: Record<string, unknown> | null;
+  seoSummary?: SeoSummary | null;
   grammarScore: number | null;
   readabilityScore: number | null;
   ragScore: number | null;
@@ -114,4 +121,86 @@ export interface ContentItem {
 export interface ApiErrorPayload {
   message: string;
   stack?: string;
+}
+
+export interface SeoComponentScore {
+  id: string;
+  label: string;
+  score: number;
+  max: number;
+  message: string;
+  severity: 'ok' | 'warn' | 'error';
+}
+
+export interface SeoSummary {
+  total: number;
+  max: number;
+  components: SeoComponentScore[];
+  meta?: {
+    wordCount?: number;
+    keywordDensity?: number;
+    avgSentenceLength?: number;
+  };
+}
+
+export interface ImageAsset {
+  id: string;
+  userId: string;
+  prompt?: string | null;
+  url: string;
+  altText?: string | null;
+  width?: number | null;
+  height?: number | null;
+  format?: string | null;
+  provider?: string | null;
+  aiMeta?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentImageLink {
+  id: string;
+  contentId: string;
+  imageId: string;
+  role: ImageRole;
+  position?: number | null;
+  createdAt: string;
+  image: ImageAsset;
+}
+
+export interface PlatformIntegration {
+  id: string;
+  userId: string;
+  platform: IntegrationPlatform;
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresAt?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublishResult {
+  id: string;
+  jobId: string;
+  externalId?: string | null;
+  publishedAt?: string | null;
+  response?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ScheduleJob {
+  id: string;
+  contentId: string;
+  integrationId: string;
+  platform: IntegrationPlatform;
+  scheduledTime: string;
+  status: ScheduleStatus;
+  attempts: number;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  content?: ContentItem;
+  integration?: PlatformIntegration;
+  result?: PublishResult | null;
 }
