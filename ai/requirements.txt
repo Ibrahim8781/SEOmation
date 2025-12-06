@@ -9,3 +9,7 @@ langdetect==1.0.9
 qdrant-client==1.10.1
 cohere==5.9.4
 python-dateutil==2.9.0.post0
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
