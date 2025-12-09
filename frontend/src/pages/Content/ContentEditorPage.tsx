@@ -29,6 +29,18 @@ const severityClass: Record<Severity, string> = {
   error: 'seo-chip--error'
 };
 
+const platformRoleMap: Record<'blog' | 'linkedin' | 'instagram', string> = {
+  blog: 'featured',
+  linkedin: 'featured',
+  instagram: 'instagram_main'
+};
+
+const roleLabel: Record<string, string> = {
+  featured: 'Blog / LinkedIn',
+  inline: 'Inline',
+  instagram_main: 'Instagram'
+};
+
 const platformOptions: { label: string; value: IntegrationPlatform }[] = [
   { label: 'WordPress', value: 'WORDPRESS' },
   { label: 'LinkedIn', value: 'LINKEDIN' },
@@ -64,6 +76,7 @@ export function ContentEditorPage() {
   const [imageLoading, setImageLoading] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
   const [imageCount, setImageCount] = useState(1);
+  const [imagePlatform, setImagePlatform] = useState<'blog' | 'linkedin' | 'instagram'>('blog');
   const [imageRole, setImageRole] = useState('featured');
   const [imageAlt, setImageAlt] = useState('');
   const [selectedInstagramImage, setSelectedInstagramImage] = useState('');
@@ -144,6 +157,10 @@ export function ContentEditorPage() {
     void loadIntegrations();
     void loadJobs();
   }, [id]);
+
+  useEffect(() => {
+    setImageRole(platformRoleMap[imagePlatform]);
+  }, [imagePlatform]);
 
   useEffect(() => {
     if (!primaryKeyword || !bodyHtml) return;
@@ -305,14 +322,6 @@ export function ContentEditorPage() {
     }
   };
 
-  const imageRoleOptions = [
-    { label: 'Featured', value: 'featured' },
-    { label: 'Inline', value: 'inline' },
-    { label: 'Instagram', value: 'instagram_main' },
-    { label: 'Thumbnail', value: 'thumbnail' },
-    { label: 'Gallery', value: 'gallery' }
-  ];
-
   const seoComponents = seoSummary?.components ?? [];
   const latestJob = useMemo(() => jobs.find((job) => job.contentId === id), [jobs, id]);
 
@@ -450,10 +459,14 @@ export function ContentEditorPage() {
               />
               <div className="form-grid">
                 <Select
-                  label="Role"
-                  value={imageRole}
-                  onChange={(e) => setImageRole(e.target.value)}
-                  options={imageRoleOptions}
+                  label="Platform"
+                  value={imagePlatform}
+                  onChange={(e) => setImagePlatform(e.target.value as 'blog' | 'linkedin' | 'instagram')}
+                  options={[
+                    { label: 'Blog / WordPress', value: 'blog' },
+                    { label: 'LinkedIn', value: 'linkedin' },
+                    { label: 'Instagram', value: 'instagram' }
+                  ]}
                 />
                 <Input
                   label="Alt text"
@@ -496,7 +509,7 @@ export function ContentEditorPage() {
                 <figure key={item.id} className="image-card glass-card">
                   <img src={item.image.url} alt={item.image.altText ?? 'content image'} />
                   <figcaption>
-                    <span className="image-role">{item.role}</span>
+                    <span className="image-role">{roleLabel[item.role] || item.role}</span>
                     <p>{item.image.altText || 'No alt text'}</p>
                     <div className="image-selectors">
                       <label>

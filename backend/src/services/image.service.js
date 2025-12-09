@@ -10,6 +10,38 @@ async function assertOwnedContent(contentId, userId) {
   return content;
 }
 
+const ROLE_ALIASES = {
+  featured: 'featured',
+  inline: 'inline',
+  instagram_main: 'instagram_main',
+  instagram: 'instagram_main',
+  insta: 'instagram_main',
+  linkedin: 'featured', // treat linkedin images as featured landscape
+  wordpress: 'featured',
+  blog: 'featured'
+};
+
+const ALLOWED_ROLES = Array.from(new Set(Object.values(ROLE_ALIASES)));
+
+const ROLE_DEFAULT_SIZES = {
+  featured: ['1200x628'], // WordPress / LinkedIn hero aspect
+  inline: ['1024x768'],   // general inline landscape
+  instagram_main: ['1080x1080'] // square for Instagram
+};
+
+function normalizeRole(role) {
+  if (!role) return 'inline';
+  const key = String(role).toLowerCase();
+  return ROLE_ALIASES[key] || 'inline';
+}
+
+function normalizeSizesForRole(role, sizes) {
+  if (Array.isArray(sizes) && sizes.length > 0) return sizes;
+  const normalized = normalizeRole(role);
+  if (normalized && ROLE_DEFAULT_SIZES[normalized]) return ROLE_DEFAULT_SIZES[normalized];
+  return ['1024x1024'];
+}
+
 function normalizeUrl(image) {
   if (image.url) return image.url;
   if (image.base64) return `data:image/png;base64,${image.base64}`;
@@ -33,6 +65,10 @@ export const ImageService = {
 
   async uploadAndAttach(contentId, userId, payload) {
     const content = await assertOwnedContent(contentId, userId);
+    const role = normalizeRole(payload.role);
+    if (role && !ALLOWED_ROLES.includes(role)) {
+      throw new ApiError(400, `role must be one of: ${ALLOWED_ROLES.join(', ')}`);
+    }
     const url = payload.dataUrl || payload.url;
     if (!url) {
       throw new ApiError(400, 'dataUrl is required');
@@ -54,13 +90,13 @@ export const ImageService = {
     });
 
     const link = await prisma.contentImageLink.create({
-      data: {
-        contentId,
-        imageId: asset.id,
-        role: payload.role || 'inline',
-        position: typeof payload.position === 'number' ? payload.position : null
-      }
-    });
+        data: {
+          contentId,
+          imageId: asset.id,
+          role,
+          position: typeof payload.position === 'number' ? payload.position : null
+        }
+      });
 
     await this._persistKeywordHintsFromAlt(contentId, userId, altText);
     return { asset, link };
@@ -69,29 +105,17 @@ export const ImageService = {
   async generateAndAttach(contentId, userId, payload) {
     const content = await assertOwnedContent(contentId, userId);
     if (!payload.prompt) throw new ApiError(400, 'prompt is required');
-
-    let aiResponse;
-    try {
-      aiResponse = await FastAPIService.generateImages(payload.prompt, {
-        style: payload.style || null,
-        sizes: payload.sizes || ['1024x1024'],
-        count: payload.count || 1,
-        language: payload.language || 'en'
-      });
-    } catch (err) {
-      aiResponse = {
-        altText: payload.altText || payload.prompt,
-        images: [
-          {
-            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
-            base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
-            size: payload.sizes?.[0] || '1024x1024',
-            provider: 'mock',
-            error: err.message
-          }
-        ]
-      };
+    const role = normalizeRole(payload.role || 'inline');
+    if (role && !ALLOWED_ROLES.includes(role)) {
+      throw new ApiError(400, `role must be one of: ${ALLOWED_ROLES.join(', ')}`);
     }
+
+    const aiResponse = await FastAPIService.generateImages(payload.prompt, {
+      style: payload.style || null,
+      sizes: normalizeSizesForRole(role, payload.sizes),
+      count: payload.count || 1,
+      language: payload.language || 'en'
+    });
 
     const images = Array.isArray(aiResponse.images) ? aiResponse.images : [];
     const results = [];
@@ -102,6 +126,7 @@ export const ImageService = {
       if (!url) continue;
 
       const altText = img.altText || aiResponse.altText || payload.altText || payload.prompt;
+      const meta = img.meta || {};
       const asset = await prisma.imageAsset.create({
         data: {
           userId,
@@ -111,11 +136,14 @@ export const ImageService = {
           width: img.width || null,
           height: img.height || null,
           format: img.format || null,
-          provider: img.provider || 'ai',
+          provider: img.provider || meta.source || 'ai',
           aiMeta: {
             size: img.size || payload.sizes?.[i] || null,
             style: payload.style || null,
-            source: 'generate'
+            source: meta.source || img.provider || 'generate',
+            sourceDetails: meta.sourceDetails || null,
+            originalUrl: meta.sourceDetails?.originalUrl || img.url || null,
+            error: img.error || null
           }
         }
       });
@@ -124,7 +152,7 @@ export const ImageService = {
         data: {
           contentId,
           imageId: asset.id,
-          role: payload.role || 'inline',
+          role,
           position: typeof payload.position === 'number' ? payload.position : i
         }
       });

@@ -28,10 +28,14 @@ class Settings(BaseSettings):
     UNSPLASH_ACCESS_KEY: str = Field(default="")
     PEXELS_API_KEY: str = Field(default="")
 
+    GEMINI_API_KEY: str = Field(default="")
+    GEMINI_IMAGE_MODEL: str = Field(default="gemini-2.5-flash-image")
+
     APP_PORT: int = Field(default=8081)
     LOG_LEVEL: str = Field(default="info")
     DEFAULT_LANGUAGE: str = Field(default="en")
     DEFAULT_NAMESPACE: str = Field(default="default")
+    RAG_BUILD_ON_CONTENT: bool = Field(default=False)
 
     class Config:
         env_file = ".env"
