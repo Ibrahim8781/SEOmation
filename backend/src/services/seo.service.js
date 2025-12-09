@@ -51,44 +51,6 @@ function headingStructureScore(html) {
   return { score, message, max: 15 };
 }
 
-function readabilityScore(text) {
-  const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-  const totalSentences = sentences.length || 1;
-  const words = toWords(text);
-  const totalWords = words.length || 1;
-  const avgSentenceLength = totalWords / totalSentences;
-
-  let score = 0;
-  let message = '';
-
-  if (avgSentenceLength <= 14) {
-    score = 9;
-    message = 'Readable, short sentences.';
-  } else if (avgSentenceLength <= 20) {
-    score = 8;
-    message = 'Good readability; keep sentences concise.';
-  } else if (avgSentenceLength <= 25) {
-    score = 6;
-    message = 'Some sentences are long; consider breaking them up.';
-  } else {
-    score = 4;
-    message = 'Sentences are too long; simplify for clarity.';
-  }
-
-  return { score, message, max: 10, avgSentenceLength };
-}
-
-function linkScore(html) {
-  const linkCount = (html.match(/<a\s+[^>]*href=/gi) || []).length;
-  if (linkCount === 0) {
-    return { score: 3, message: 'Add a few internal/external links.', max: 10, linkCount };
-  }
-  if (linkCount < 3) {
-    return { score: 7, message: 'Consider 3-5 relevant links.', max: 10, linkCount };
-  }
-  return { score: 10, message: 'Linking looks good.', max: 10, linkCount };
-}
-
 function imageAltScore(html, images = []) {
   const altTextsFromHtml = Array.from(html.matchAll(/<img[^>]*alt=['"]([^'"]+)['"][^>]*>/gi)).map(
     (m) => m[1]
@@ -143,17 +105,21 @@ function keywordScore(text, primaryKeyword, secondaryKeywords = []) {
 }
 
 function lengthScore(wordCount) {
-  if (wordCount >= 1600) {
+  // Short-form friendly thresholds (still encourage longer drafts via prompt target).
+  if (wordCount >= 400) {
     return { score: 15, message: 'Great depth; article is long enough.', max: 15 };
   }
-  if (wordCount >= 1200) {
+  if (wordCount >= 300) {
     return { score: 13, message: 'Solid length for SEO.', max: 15 };
   }
-  if (wordCount >= 800) {
-    return { score: 10, message: 'Consider expanding sections for depth.', max: 15 };
+  if (wordCount >= 250) {
+    return { score: 11, message: 'Consider expanding sections for depth.', max: 15 };
   }
-  if (wordCount >= 500) {
-    return { score: 7, message: 'Content is short; add more detail.', max: 15 };
+  if (wordCount >= 150) {
+    return { score: 9, message: 'Content is a bit short; add more detail.', max: 15 };
+  }
+  if (wordCount >= 100) {
+    return { score: 7, message: 'Content is short; expand sections.', max: 15 };
   }
   return { score: 4, message: 'Very short content; expand significantly.', max: 15 };
 }
@@ -279,28 +245,6 @@ export const SeoService = {
       severity: severity(lengthResult.score, lengthResult.max)
     });
 
-    // Readability
-    const readability = readabilityScore(text);
-    components.push({
-      id: 'readability',
-      label: 'Readability',
-      score: readability.score,
-      max: readability.max,
-      message: readability.message,
-      severity: severity(readability.score, readability.max)
-    });
-
-    // Links
-    const links = linkScore(bodyHtml || '');
-    components.push({
-      id: 'links',
-      label: 'Links',
-      score: links.score,
-      max: links.max,
-      message: links.message,
-      severity: severity(links.score, links.max)
-    });
-
     // Image alt
     const imageAlt = imageAltScore(bodyHtml || '', images);
     components.push({
@@ -314,15 +258,15 @@ export const SeoService = {
 
     const totalMax = components.reduce((acc, item) => acc + item.max, 0);
     const totalScore = components.reduce((acc, item) => acc + item.score, 0);
+    const percent = totalMax ? Number(((totalScore / totalMax) * 100).toFixed(2)) : 0;
 
     return {
-      total: Number(totalScore.toFixed(2)),
-      max: totalMax,
+      total: percent,
+      max: 100,
       components,
       meta: {
         wordCount,
-        keywordDensity: keywordResult.density,
-        avgSentenceLength: readability.avgSentenceLength
+        keywordDensity: keywordResult.density
       }
     };
   }

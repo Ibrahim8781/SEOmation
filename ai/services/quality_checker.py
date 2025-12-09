@@ -1,8 +1,6 @@
 from typing import List, Tuple, Dict
 import re
 
-# This mirrors the backend SeoService rule set so scoring is consistent across generation and draft checks.
-
 def _strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html or "")
 
@@ -40,30 +38,6 @@ def _heading_structure_score(html: str):
     return 13, "Heading structure looks solid.", 15
 
 
-def _readability_score(text: str):
-    sentences = [s for s in re.split(r"[.!?]+", text) if s.strip()]
-    total_sentences = len(sentences) or 1
-    words = _to_words(text)
-    total_words = len(words) or 1
-    avg = total_words / total_sentences
-    if avg <= 14:
-        return 9, "Readable, short sentences.", 10, avg
-    if avg <= 20:
-        return 8, "Good readability; keep sentences concise.", 10, avg
-    if avg <= 25:
-        return 6, "Some sentences are long; consider breaking them up.", 10, avg
-    return 4, "Sentences are too long; simplify for clarity.", 10, avg
-
-
-def _link_score(html: str):
-    link_count = len(re.findall(r"<a\s+[^>]*href=", html or "", flags=re.IGNORECASE))
-    if link_count == 0:
-        return 3, "Add a few internal/external links.", 10
-    if link_count < 3:
-        return 7, "Consider 3-5 relevant links.", 10
-    return 10, "Linking looks good.", 10
-
-
 def _image_alt_score(html: str, images: List[Dict]) -> Tuple[int, str, int]:
     alts_html = re.findall(r"<img[^>]*alt=['\"]([^'\"]+)['\"][^>]*>", html or "", flags=re.IGNORECASE)
     combined = alts_html + [img.get("altText") for img in images or [] if img.get("altText")]
@@ -96,14 +70,17 @@ def _keyword_score(text: str, primary: str, secondary: List[str]):
 
 
 def _length_score(word_count: int):
-    if word_count >= 1600:
+    # Short-form friendly thresholds; generation prompt can still target higher lengths.
+    if word_count >= 400:
         return 15, "Great depth; article is long enough.", 15
-    if word_count >= 1200:
+    if word_count >= 300:
         return 13, "Solid length for SEO.", 15
-    if word_count >= 800:
-        return 10, "Consider expanding sections for depth.", 15
-    if word_count >= 500:
-        return 7, "Content is short; add more detail.", 15
+    if word_count >= 250:
+        return 11, "Consider expanding sections for depth.", 15
+    if word_count >= 150:
+        return 9, "Content is a bit short; add more detail.", 15
+    if word_count >= 100:
+        return 7, "Content is short; expand sections.", 15
     return 4, "Very short content; expand significantly.", 15
 
 
@@ -186,20 +163,13 @@ def seo_score_and_hints(platform: str, language: str, focus_keyword: str, conten
     l_score, l_msg, l_max = _length_score(word_count)
     components.append({"id": "length", "label": "Content length", "score": l_score, "max": l_max, "message": l_msg, "severity": _severity(l_score, l_max)})
 
-    # Readability
-    r_score, r_msg, r_max, avg_sentence_len = _readability_score(text)
-    components.append({"id": "readability", "label": "Readability", "score": r_score, "max": r_max, "message": r_msg, "severity": _severity(r_score, r_max)})
-
-    # Links
-    link_score_val, link_msg, link_max = _link_score(html)
-    components.append({"id": "links", "label": "Links", "score": link_score_val, "max": link_max, "message": link_msg, "severity": _severity(link_score_val, link_max)})
-
     # Images
     img_score, img_msg, img_max = _image_alt_score(html, images or [])
     components.append({"id": "images", "label": "Image alt text", "score": img_score, "max": img_max, "message": img_msg, "severity": _severity(img_score, img_max)})
 
     total_max = sum(c["max"] for c in components)
     total_score = sum(c["score"] for c in components)
+    percent = int(round((total_score / total_max) * 100)) if total_max else 0
 
     # Hints: surface non-OK items
     hints: List[Dict[str, str]] = []
@@ -207,4 +177,4 @@ def seo_score_and_hints(platform: str, language: str, focus_keyword: str, conten
         if comp["severity"] != "ok":
             hints.append({"type": comp["id"], "msg": comp["message"]})
 
-    return int(total_score), hints
+    return percent, hints

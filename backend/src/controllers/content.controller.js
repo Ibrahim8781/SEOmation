@@ -194,17 +194,8 @@ export const ContentController = {
         }
       }
 
-      let seo = null;
-      try {
-        seo = await FastAPIService.getSeoHints(
-          platform,
-          language,
-          focusKeyword,
-          saved.html || saved.text || ''
-        );
-      } catch (seoError) {
-        console.warn('[FastAPI] SEO hints failed', seoError.message);
-      }
+      // Skip SEO scoring on generation; editor will score live
+      const seo = null;
 
       res.status(HTTP.CREATED).json({
         item: saved,
