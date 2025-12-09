@@ -32,9 +32,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(default="info")
     DEFAULT_LANGUAGE: str = Field(default="en")
     DEFAULT_NAMESPACE: str = Field(default="default")
+    RAG_BUILD_ON_CONTENT: bool = Field(default=False)
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore unknown env vars (e.g., deprecated provider keys)
 
 settings = Settings()

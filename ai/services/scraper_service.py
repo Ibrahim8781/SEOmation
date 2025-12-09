@@ -1,17 +1,36 @@
 from typing import List, Dict, Set
-import feedparser, httpx
+import feedparser, httpx, logging
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urlparse
 from urllib import robotparser
 from config import settings
 
+logger = logging.getLogger(__name__)
+
 HEADERS = {"User-Agent": "SEOmationBot/1.0 (+https://example.com/bot)"}
 
+# Small, curated RSS sets per broad niche; kept short to avoid noise.
 TOP_RSS = {
     "seo": [
         "https://neilpatel.com/blog/feed/",
         "https://backlinko.com/blog/feed",
         "https://moz.com/blog/feed"
+    ],
+    "tech": [
+        "https://www.theverge.com/rss/index.xml",
+        "https://techcrunch.com/feed/"
+    ],
+    "business": [
+        "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+        "https://www.forbes.com/most-popular/feed/"
+    ],
+    "sports": [
+        "https://www.espn.com/espn/rss/news",
+        "https://www.skysports.com/rss/12040"
+    ],
+    "general": [
+        "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+        "https://feeds.bbci.co.uk/news/rss.xml"
     ]
 }
 
@@ -26,7 +45,7 @@ def _allowed(url: str) -> bool:
         return True
 
 async def fetch_rss(niche: str) -> List[Dict]:
-    urls = TOP_RSS.get("seo", [])
+    urls = TOP_RSS.get(niche.lower(), []) or TOP_RSS.get("general", [])
     items: List[Dict] = []
     for u in urls:
         try:
@@ -92,15 +111,21 @@ async def serper_urls(query: str, num: int = 10) -> List[str]:
 async def candidate_urls(niche: str, seed_keywords: List[str], language: str, region: str) -> List[str]:
     q = f"{niche} {(' '.join(seed_keywords)) if seed_keywords else ''}".strip()
     urls: List[str] = []
-    # Google News
-    gitems = await google_news_items(q)
-    urls.extend([it["url"] for it in gitems if it.get("url")])
-    # Serper (optional)
+
+    # Prefer Serper if available for fresher/broader coverage
     surls = await serper_urls(q, num=10)
     urls.extend(surls)
-    # Baseline RSS
+
+    # Google News RSS fallback
+    gitems = await google_news_items(q)
+    urls.extend([it["url"] for it in gitems if it.get("url")])
+
+    # Baseline RSS by niche/general
     rss = await fetch_rss(niche)
     urls.extend([it["url"] for it in rss if it.get("url")])
+
+    logger.info("RAG candidate_urls", extra={"query": q, "serper": len(surls), "gnews": len(gitems), "rss": len(rss)})
+
     # Dedup
     seen: Set[str] = set()
     dedup: List[str] = []

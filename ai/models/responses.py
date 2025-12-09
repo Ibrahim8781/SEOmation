@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class TopicCluster(BaseModel):
     label: str
@@ -24,6 +24,7 @@ class GeneratedImage(BaseModel):
     size: str
     provider: str
     altText: str
+    meta: Optional[Dict[str, Any]] = None
 
 class ImageGenerateResponse(BaseModel):
     altText: str

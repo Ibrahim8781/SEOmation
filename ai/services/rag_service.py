@@ -4,7 +4,9 @@ from utils.text_processing import chunk_text
 from services.scraper_service import candidate_urls, extract_main_text
 from services.embedding_service import embed_texts
 from utils.cache import get_if_fresh, set_with_ttl
-import asyncio, uuid
+import asyncio, uuid, logging
+
+logger = logging.getLogger(__name__)
 
 _qdrant = None
 _engine = None
@@ -17,7 +19,7 @@ _MEMORY: Dict[str, List[Dict[str, Any]]] = {}
 def _memory_upsert(ns: str, texts: List[str], metas: List[Dict[str, Any]], embs: List[List[float]]):
     entries = _MEMORY.setdefault(ns, [])
     for i, t in enumerate(texts):
-        entries.append({"id": str(uuid.uuid4()), "text": t, "meta": metas[i], "vector": embs[i]} )
+        entries.append({"id": str(uuid.uuid4()), "text": t, "meta": metas[i], "vector": embs[i]})
 
 def _memory_search(ns: str, qvec: List[float], top_k: int = 40) -> List[Dict[str, Any]]:
     from math import sqrt
@@ -32,7 +34,15 @@ def _memory_search(ns: str, qvec: List[float], top_k: int = 40) -> List[Dict[str
         den = (sqrt((a*a).sum()) * sqrt((b*b).sum())) or 1.0
         return num/den
     ranked = sorted(entries, key=lambda e: cos(e["vector"], q), reverse=True)[:top_k]
-    return [{"payload": {"url": e["meta"].get("url","mem")}} for e in ranked]
+    return [
+        {
+            "payload": {
+                "url": e["meta"].get("url", "mem"),
+                "snippet": e["meta"].get("snippet") or (e.get("text") or "")[:320],
+            }
+        }
+        for e in ranked
+    ]
 
 def _qdrant_client():
     global _qdrant
@@ -63,6 +73,7 @@ def _qdrant_upsert(ns: str, texts: List[str], metas: List[Dict[str, Any]], embs:
         points = []
         for i in range(start, min(start+batch, total)):
             meta = dict(metas[i]); meta["namespace"] = ns
+            meta["snippet"] = meta.get("snippet") or (texts[i] or "")[:320]
             points.append(qm.PointStruct(id=str(uuid.uuid4()), vector=embs[i], payload=meta))
         c.upsert(collection_name=settings.QDRANT_COLLECTION, points=points, wait=True)
 
@@ -118,10 +129,10 @@ def _pg_search(ns: str, qvec: List[float], top_k: int = 40) -> List[Dict[str, An
     vec = f"[{','.join(str(x) for x in qvec)}]"
     with eng.begin() as conn:
         rows = conn.exec_driver_sql(
-            f"SELECT url, 1 - (embedding <=> {vec}) as score FROM rag_chunks WHERE namespace=%s ORDER BY embedding <=> {vec} ASC LIMIT {top_k}",
+            f"SELECT url, text, 1 - (embedding <=> {vec}) as score FROM rag_chunks WHERE namespace=%s ORDER BY embedding <=> {vec} ASC LIMIT {top_k}",
             (ns,)
         ).fetchall()
-    return [{"payload": {"url": r[0]}} for r in rows]
+    return [{"payload": {"url": r[0], "snippet": (r[1] or '')[:320]}} for r in rows]
 
 async def quick_seed_now(
     user_id: str, language: str, niche: str,
@@ -134,9 +145,9 @@ async def quick_seed_now(
     texts, metas = [], []
     base = [niche] + (seed_keywords or [])[:4]
     for sk in base[:6]:
-        txt = f"{niche} — primer on '{sk}': practical steps, pitfalls, KPIs, examples. Language={language}."
+        txt = f"{niche} primer on '{sk}': practical steps, pitfalls, KPIs, examples. Language={language}."
         texts.append(txt)
-        metas.append({"url": f"seed:{sk}", "language": language, "niche": niche, "source": "seed"})
+        metas.append({"url": f"seed:{sk}", "language": language, "niche": niche, "source": "seed", "snippet": txt[:320]})
     embs = embed_texts(texts)
     _store(namespace, texts, metas, embs)
     set_with_ttl(key, True, settings.CACHE_TTL_SECONDS)
@@ -146,6 +157,7 @@ def ensure_index_async(
     region: Optional[str], season: Optional[str],
     seed_keywords: List[str], namespace: str
 ):
+    logger.info("ensure_index_async scheduled", extra={"ns": namespace, "niche": niche, "language": language})
     asyncio.create_task(_build_index(user_id, language, niche, region, season, seed_keywords, namespace))
 
 async def _build_index(
@@ -162,17 +174,18 @@ async def _build_index(
         chunks = chunk_text(txt, max_words=120)
         for c in chunks:
             texts.append(c)
-            metas.append({"url": u, "language": language, "niche": niche, "source": "web"})
+            metas.append({"url": u, "language": language, "niche": niche, "source": "web", "snippet": c[:320]})
         if len(texts) >= 200:
             break
     if not texts:
         base = [niche] + (seed_keywords or [])[:4]
         for sk in base[:6]:
-            synthetic = f"{niche} — quick guide about '{sk}': concepts, steps, pitfalls, KPIs. Language={language}."
+            synthetic = f"{niche} quick guide about '{sk}': concepts, steps, pitfalls, KPIs. Language={language}."
             texts.append(synthetic)
-            metas.append({"url": f"seed:{sk}", "language": language, "niche": niche, "source": "seed"})
+            metas.append({"url": f"seed:{sk}", "language": language, "niche": niche, "source": "seed", "snippet": synthetic[:320]})
     embs = embed_texts(texts)
     _store(namespace, texts, metas, embs)
+    logger.info("build_index_complete", extra={"ns": namespace, "urls": len(urls), "chunks": len(texts)})
 
 def _store(ns: str, texts: List[str], metas: List[Dict[str, Any]], embs: List[List[float]]):
     backend = settings.VECTOR_BACKEND.lower()
@@ -201,12 +214,14 @@ async def retrieve_context(
     seen, snippets = set(), []
     for h in hits:
         url = h.get("payload", {}).get("url")
+        snippet = (h.get("payload", {}).get("snippet") or "")[:280]
         if not url or url in seen:
             continue
         seen.add(url)
-        snippets.append({"url": url, "text": "(excerpt omitted)"})
+        snippets.append({"url": url, "text": snippet or "(excerpt omitted)"})
         if len(snippets) >= 12:
             break
+    logger.info("retrieve_context", extra={"namespace": namespace, "hits": len(snippets), "usedRAG": len(snippets) > 0})
     return {"snippets": snippets, "usedRAG": len(snippets) > 0}
 
 def _search(ns: str, qvec: List[float], top_k: int):

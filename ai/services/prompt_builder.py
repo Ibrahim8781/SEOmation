@@ -28,8 +28,9 @@ Rules:
 - H2/H3 hierarchy; intro mentions keyword in first 100-150 words
 - Meta description 140-160 chars including {focus_kw}
 - Target length ~{target_length} words (±15%)
-- Provide 1-3 image prompts + ALT text; placeholders internalLinks[]/externalLinks[]
-Return JSON: title, h1, sections:[{{h2, body}}],  meta:{{description, slug}}, images:[{{prompt, alt}}], links:{{internal[], external[]}}"""
+- Use the primary keyword naturally (avoid stuffing); sprinkle secondary keywords if helpful
+- Provide 1-3 image prompts + ALT text; no links required
+Return JSON: title, h1, sections:[{{h2, body}}],  meta:{{description, slug}}, images:[{{prompt, alt}}]"""
 
 
 def linkedin_system(language: str) -> str:
