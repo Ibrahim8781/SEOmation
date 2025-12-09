@@ -52,9 +52,6 @@ export function IntegrationsPage() {
     }
   };
 
-  const isConnected = (platform: IntegrationPlatform) =>
-    items.some((item) => item.platform === platform);
-
   return (
     <div className="integrations-page">
       <header className="integrations-header">

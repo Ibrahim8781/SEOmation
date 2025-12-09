@@ -12,4 +12,4 @@
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env   # set your keys (GROQ, COHERE; optional SERPER, QDRANT)
-uvicorn main:app --host 0.0.0.0 --port 8081 --reload
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload

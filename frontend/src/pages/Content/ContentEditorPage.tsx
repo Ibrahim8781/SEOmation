@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { FiAlertCircle, FiCheck, FiClock, FiImage, FiLoader, FiSave, FiSend } from 'react-icons/fi';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { FiChevronDown, FiClock, FiImage, FiLoader, FiSave, FiSend } from 'react-icons/fi';
 import { ContentAPI, type GenerateImagePayload } from '@/api/content';
 import { IntegrationsAPI } from '@/api/integrations';
 import { ScheduleAPI, type PublishPayload, type SchedulePayload } from '@/api/schedule';
@@ -57,6 +57,7 @@ function toSecondary(input: string): string[] {
 
 export function ContentEditorPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,6 +90,8 @@ export function ContentEditorPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<IntegrationPlatform>('WORDPRESS');
   const [scheduledTime, setScheduledTime] = useState('');
   const scoreTimer = useRef<number | null>(null);
+  const publishIntent = (location.state as { openPublishModal?: boolean } | null)?.openPublishModal;
+  const [activeSidePanel, setActiveSidePanel] = useState<'seo' | 'images' | 'publishing'>('seo');
 
   const load = async () => {
     if (!id) return;
@@ -157,6 +160,12 @@ export function ContentEditorPage() {
     void loadIntegrations();
     void loadJobs();
   }, [id]);
+
+  useEffect(() => {
+    if (publishIntent) {
+      setPublishModalOpen(true);
+    }
+  }, [publishIntent]);
 
   useEffect(() => {
     setImageRole(platformRoleMap[imagePlatform]);
@@ -421,158 +430,200 @@ export function ContentEditorPage() {
         </section>
 
         <aside className="content-editor-sidebar">
-          <div className="seo-panel glass-card">
-            <div className="seo-panel__header">
-              <div>
-                <p>SEO Score</p>
-                <h3>{seoSummary ? Math.round(seoSummary.total) : '—'}</h3>
-              </div>
-              {scoring && <FiLoader className="spin" aria-hidden />}
-            </div>
-            <div className="seo-panel__components">
-              {seoComponents.map((comp) => (
-                <div key={comp.id} className="seo-chip glass-card">
-                  <div className="seo-chip__header">
-                    <span className={`seo-chip__badge ${severityClass[comp.severity]}`}>{comp.label}</span>
-                    <strong>
-                      {comp.score}/{comp.max}
-                    </strong>
-                  </div>
-                  <p>{comp.message}</p>
-                </div>
-              ))}
-              {seoComponents.length === 0 && <p className="muted">Score will appear as you type.</p>}
-            </div>
-          </div>
-
-          <div className="images-panel glass-card">
-            <div className="images-panel__header">
-              <h3>Images</h3>
-              <span className="images-count">{images.length} linked</span>
-            </div>
-            <div className="images-form">
-              <Input
-                label="Prompt"
-                value={imagePrompt}
-                onChange={(e) => setImagePrompt(e.target.value)}
-                placeholder="e.g. Futuristic workspace for SaaS team"
-              />
-              <div className="form-grid">
-                <Select
-                  label="Platform"
-                  value={imagePlatform}
-                  onChange={(e) => setImagePlatform(e.target.value as 'blog' | 'linkedin' | 'instagram')}
-                  options={[
-                    { label: 'Blog / WordPress', value: 'blog' },
-                    { label: 'LinkedIn', value: 'linkedin' },
-                    { label: 'Instagram', value: 'instagram' }
-                  ]}
-                />
-                <Input
-                  label="Alt text"
-                  value={imageAlt}
-                  onChange={(e) => setImageAlt(e.target.value)}
-                  placeholder="Describe the image"
-                />
-              </div>
-              <div className="form-grid">
-                <Input
-                  type="number"
-                  min={1}
-                  max={4}
-                  label="Count"
-                  value={imageCount}
-                  onChange={(e) => setImageCount(Number(e.target.value))}
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  leftIcon={<FiImage />}
-                  onClick={handleGenerateImages}
-                  isLoading={imageLoading}
-                >
-                  Generate
-                </Button>
-              </div>
-              <label className="upload-label">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleUploadImage(e.target.files?.[0])}
-                  disabled={imageLoading}
-                />
-                <span>Upload image</span>
-              </label>
-            </div>
-            <div className="images-grid">
-              {images.map((item) => (
-                <figure key={item.id} className="image-card glass-card">
-                  <img src={item.image.url} alt={item.image.altText ?? 'content image'} />
-                  <figcaption>
-                    <span className="image-role">{roleLabel[item.role] || item.role}</span>
-                    <p>{item.image.altText || 'No alt text'}</p>
-                    <div className="image-selectors">
-                      <label>
-                        <input
-                          type="radio"
-                          name="insta-image"
-                          checked={selectedInstagramImage === item.id}
-                          onChange={() => setSelectedInstagramImage(item.id)}
-                        />
-                        Instagram
-                      </label>
-                      <label>
-                        <input
-                          type="radio"
-                          name="linkedin-image"
-                          checked={selectedLinkedinImage === item.id}
-                          onChange={() => setSelectedLinkedinImage(item.id)}
-                        />
-                        LinkedIn
-                      </label>
-                      <label>
-                        <input
-                          type="radio"
-                          name="wp-image"
-                          checked={selectedWordpressImage === item.id}
-                          onChange={() => setSelectedWordpressImage(item.id)}
-                        />
-                        Featured
-                      </label>
+          <div className={`editor-side-panel glass-card ${activeSidePanel === 'seo' ? 'is-open' : ''}`}>
+            <button
+              type="button"
+              className="editor-side-panel__header"
+              onClick={() => setActiveSidePanel('seo')}
+            >
+              <span>SEO</span>
+              <FiChevronDown className={activeSidePanel === 'seo' ? 'rotated' : ''} aria-hidden />
+            </button>
+            {activeSidePanel === 'seo' && (
+              <div className="editor-side-panel__body">
+                <div className="seo-panel">
+                  <div className="seo-panel__header">
+                    <div>
+                      <p>SEO Score</p>
+                      <h3>{seoSummary ? Math.round(seoSummary.total) : '—'}</h3>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="md"
-                      onClick={() => handleDeleteImage(item.id)}
-                      disabled={imageLoading}
-                    >
-                      Remove
-                    </Button>
-                  </figcaption>
-                </figure>
-              ))}
-              {images.length === 0 && <p className="muted">No images attached yet.</p>}
-            </div>
+                    {scoring && <FiLoader className="spin" aria-hidden />}
+                  </div>
+                  <div className="seo-panel__components">
+                    {seoComponents.map((comp) => (
+                      <div key={comp.id} className="seo-chip glass-card">
+                        <div className="seo-chip__header">
+                          <span className={`seo-chip__badge ${severityClass[comp.severity]}`}>{comp.label}</span>
+                          <strong>
+                            {comp.score}/{comp.max}
+                          </strong>
+                        </div>
+                        <p>{comp.message}</p>
+                      </div>
+                    ))}
+                    {seoComponents.length === 0 && <p className="muted">Score will appear as you type.</p>}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="publish-panel glass-card">
-            <div className="publish-panel__row">
-              <div>
-                <p className="muted">Publishing</p>
-                <strong>{latestJob ? latestJob.status : 'Not scheduled'}</strong>
+          <div className={`editor-side-panel glass-card ${activeSidePanel === 'images' ? 'is-open' : ''}`}>
+            <button
+              type="button"
+              className="editor-side-panel__header"
+              onClick={() => setActiveSidePanel('images')}
+            >
+              <span>Images</span>
+              <FiChevronDown className={activeSidePanel === 'images' ? 'rotated' : ''} aria-hidden />
+            </button>
+            {activeSidePanel === 'images' && (
+              <div className="editor-side-panel__body">
+                <div className="images-panel">
+                  <div className="images-panel__header">
+                    <h3>Images</h3>
+                    <span className="images-count">{images.length} linked</span>
+                  </div>
+                  <div className="images-form">
+                    <Input
+                      label="Prompt"
+                      value={imagePrompt}
+                      onChange={(e) => setImagePrompt(e.target.value)}
+                      placeholder="e.g. Futuristic workspace for SaaS team"
+                    />
+                    <div className="form-grid">
+                      <Select
+                        label="Platform"
+                        value={imagePlatform}
+                        onChange={(e) => setImagePlatform(e.target.value as 'blog' | 'linkedin' | 'instagram')}
+                        options={[
+                          { label: 'Blog / WordPress', value: 'blog' },
+                          { label: 'LinkedIn', value: 'linkedin' },
+                          { label: 'Instagram', value: 'instagram' }
+                        ]}
+                      />
+                      <Input
+                        label="Alt text"
+                        value={imageAlt}
+                        onChange={(e) => setImageAlt(e.target.value)}
+                        placeholder="Describe the image"
+                      />
+                    </div>
+                    <div className="form-grid">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={4}
+                        label="Count"
+                        value={imageCount}
+                        onChange={(e) => setImageCount(Number(e.target.value))}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        leftIcon={<FiImage />}
+                        onClick={handleGenerateImages}
+                        isLoading={imageLoading}
+                      >
+                        Generate
+                      </Button>
+                    </div>
+                    <label className="upload-label">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleUploadImage(e.target.files?.[0])}
+                        disabled={imageLoading}
+                      />
+                      <span>Upload image</span>
+                    </label>
+                  </div>
+                  <div className="images-grid">
+                    {images.map((item) => (
+                      <figure key={item.id} className="image-card glass-card">
+                        <img src={item.image.url} alt={item.image.altText ?? 'content image'} />
+                        <figcaption>
+                          <span className="image-role">{roleLabel[item.role] || item.role}</span>
+                          <p>{item.image.altText || 'No alt text'}</p>
+                          <div className="image-selectors">
+                            <label>
+                              <input
+                                type="radio"
+                                name="insta-image"
+                                checked={selectedInstagramImage === item.id}
+                                onChange={() => setSelectedInstagramImage(item.id)}
+                              />
+                              Instagram
+                            </label>
+                            <label>
+                              <input
+                                type="radio"
+                                name="linkedin-image"
+                                checked={selectedLinkedinImage === item.id}
+                                onChange={() => setSelectedLinkedinImage(item.id)}
+                              />
+                              LinkedIn
+                            </label>
+                            <label>
+                              <input
+                                type="radio"
+                                name="wp-image"
+                                checked={selectedWordpressImage === item.id}
+                                onChange={() => setSelectedWordpressImage(item.id)}
+                              />
+                              Featured
+                            </label>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="md"
+                            onClick={() => handleDeleteImage(item.id)}
+                            disabled={imageLoading}
+                          >
+                            Remove
+                          </Button>
+                        </figcaption>
+                      </figure>
+                    ))}
+                    {images.length === 0 && <p className="muted">No images attached yet.</p>}
+                  </div>
+                </div>
               </div>
-              <Button variant="secondary" onClick={() => setPublishModalOpen(true)}>
-                Manage
-              </Button>
-            </div>
-            {latestJob && (
-              <p className="muted">
-                {latestJob.platform} · {new Date(latestJob.scheduledTime).toLocaleString()}
-              </p>
             )}
-            <Button variant="ghost" onClick={() => navigate('/schedule')}>
-              View schedule
-            </Button>
+          </div>
+
+          <div className={`editor-side-panel glass-card ${activeSidePanel === 'publishing' ? 'is-open' : ''}`}>
+            <button
+              type="button"
+              className="editor-side-panel__header"
+              onClick={() => setActiveSidePanel('publishing')}
+            >
+              <span>Publishing</span>
+              <FiChevronDown className={activeSidePanel === 'publishing' ? 'rotated' : ''} aria-hidden />
+            </button>
+            {activeSidePanel === 'publishing' && (
+              <div className="editor-side-panel__body">
+                <div className="publish-panel">
+                  <div className="publish-panel__row">
+                    <div>
+                      <p className="muted">Publishing</p>
+                      <strong>{latestJob ? latestJob.status : 'Not scheduled'}</strong>
+                    </div>
+                    <Button variant="secondary" onClick={() => setPublishModalOpen(true)}>
+                      Manage
+                    </Button>
+                  </div>
+                  {latestJob && (
+                    <p className="muted">
+                      {latestJob.platform} - {new Date(latestJob.scheduledTime).toLocaleString()}
+                    </p>
+                  )}
+                  <Button variant="ghost" onClick={() => navigate('/schedule')}>
+                    View schedule
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       </div>
@@ -611,7 +662,7 @@ export function ContentEditorPage() {
                 const found = integrations.find((i) => i.id === idVal);
                 if (found) setSelectedPlatform(found.platform);
               }}
-              options={integrations.map((i) => ({ label: `${i.platform} • ${i.id.slice(0, 6)}`, value: i.id }))}
+              options={integrations.map((i) => ({ label: `${i.platform} - ${i.id.slice(0, 6)}`, value: i.id }))}
             />
             <Select
               label="Platform"
