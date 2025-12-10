@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { FiCheck, FiChevronDown, FiCopy, FiEdit3, FiSend, FiX } from 'react-icons/fi';
@@ -365,6 +366,11 @@ export function BlogWriterPage() {
     }
     if (!scheduledTime) {
       setPublishError('Pick a time to schedule.');
+      return;
+    }
+    const picked = dayjs(scheduledTime);
+    if (!picked.isValid() || picked.isBefore(dayjs())) {
+      setPublishError('Pick a future time for scheduling.');
       return;
     }
 
@@ -924,6 +930,7 @@ export function BlogWriterPage() {
               label="Schedule time"
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
+              min={dayjs().add(5, 'minute').format('YYYY-MM-DDTHH:mm')}
             />
             <label className="blog-writer-checkbox blog-writer-checkbox--spaced">
               <input

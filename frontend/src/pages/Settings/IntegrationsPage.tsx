@@ -16,6 +16,8 @@ export function IntegrationsPage() {
   const [items, setItems] = useState<PlatformIntegration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<IntegrationPlatform | null>(null);
+  const [status, setStatus] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -32,14 +34,20 @@ export function IntegrationsPage() {
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = async (platform: IntegrationPlatform) => {
+    setError(null);
+    setStatus('');
     try {
+      setConnecting(platform);
       const { data } = await IntegrationsAPI.getAuthUrl(platform);
-      window.location.href = data.url;
+      window.open(data.url, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setError(extractErrorMessage(err, 'Unable to start connection.'));
+      setConnecting(null);
+      setStatus('');
     }
   };
 
@@ -88,7 +96,13 @@ export function IntegrationsPage() {
               )}
               <div className="integration-card__actions">
                 {!connected && (
-                  <Button variant="primary" onClick={() => connect(provider.value)} leftIcon={<FiExternalLink />}>
+                  <Button
+                    variant="primary"
+                    onClick={() => connect(provider.value)}
+                    leftIcon={<FiExternalLink />}
+                    isLoading={connecting === provider.value}
+                    disabled={!!connecting}
+                  >
                     Connect
                   </Button>
                 )}
@@ -102,6 +116,8 @@ export function IntegrationsPage() {
           );
         })}
       </div>
+
+      {status && <div className="integrations-status glass-card">{status}</div>}
     </div>
   );
 }

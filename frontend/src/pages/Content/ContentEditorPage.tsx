@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dayjs from 'dayjs';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { FiChevronDown, FiClock, FiImage, FiLoader, FiSave, FiSend } from 'react-icons/fi';
 import { ContentAPI, type GenerateImagePayload } from '@/api/content';
@@ -309,6 +310,11 @@ export function ContentEditorPage() {
     if (!id || !selectedIntegrationId || !scheduledTime) return;
     if (selectedPlatform === 'INSTAGRAM' && !selectedInstagramImage) {
       setError('Instagram requires selecting an image.');
+      return;
+    }
+    const picked = dayjs(scheduledTime);
+    if (!picked.isValid() || picked.isBefore(dayjs())) {
+      setError('Pick a future time for scheduling.');
       return;
     }
     try {
@@ -675,6 +681,7 @@ export function ContentEditorPage() {
               label="Schedule time"
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
+              min={dayjs().add(5, 'minute').format('YYYY-MM-DDTHH:mm')}
             />
           </div>
         )}

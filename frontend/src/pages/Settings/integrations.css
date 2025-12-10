@@ -56,3 +56,11 @@
   background: #fff1f0;
   border: 1px solid #ffa39e;
 }
+
+.integrations-status {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(82, 196, 26, 0.35);
+  background: rgba(82, 196, 26, 0.08);
+  color: #1b4d2b;
+}
