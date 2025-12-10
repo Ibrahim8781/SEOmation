@@ -95,6 +95,19 @@
   box-shadow: 0 2px 4px rgba(47, 84, 235, 0.25);
 }
 
+.calendar-widget__day--scheduled {
+  border: 2px solid #2ecc71;
+  color: #1f1f25;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+}
+
+.calendar-widget__day--scheduled.calendar-widget__day--today {
+  border-color: #2ecc71;
+  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+}
+
 .calendar-widget__day:not(.calendar-widget__day--label):hover {
   background: rgba(47, 84, 235, 0.08);
   color: var(--color-primary);

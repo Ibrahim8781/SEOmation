@@ -1,18 +1,15 @@
 import { NavLink } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
-  FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
   FiClock,
   FiFileText,
   FiEdit3,
   FiHome,
-  FiLogOut,
-  FiSettings
+  FiLink,
+  FiLogOut
 } from 'react-icons/fi';
-import { FaInstagram } from 'react-icons/fa';
-import { SiWordpress } from 'react-icons/si';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import './sidebar.css';
@@ -38,6 +35,11 @@ const primaryNav = [
     label: 'Schedule',
     icon: <FiClock />,
     to: '/schedule'
+  },
+  {
+    label: 'Integrations',
+    icon: <FiLink />,
+    to: '/settings/integrations'
   }
 ];
 
@@ -94,38 +96,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="app-sidebar__section">
-        <h3 className="app-sidebar__section-title">Integrated Modules</h3>
-        <div className="app-sidebar__module">
-          <div className="app-sidebar__module-info">
-            <span className="app-sidebar__module-icon instagram">
-              <FaInstagram />
-            </span>
-            <span className="app-sidebar__label">Instagram</span>
-          </div>
-          <FiChevronDown />
-        </div>
-        <div className="app-sidebar__module">
-          <div className="app-sidebar__module-info">
-            <span className="app-sidebar__module-icon wordpress">
-              <SiWordpress />
-            </span>
-            <span className="app-sidebar__label">WordPress</span>
-          </div>
-          <FiChevronDown />
-        </div>
-      </div>
-
       <div className="app-sidebar__footer">
-        <NavLink
-          to="/settings/integrations"
-          className={({ isActive }) =>
-            isActive ? 'app-sidebar__footer-btn app-sidebar__footer-btn--active' : 'app-sidebar__footer-btn'
-          }
-        >
-          <FiSettings />
-          <span className="app-sidebar__label">Settings</span>
-        </NavLink>
         <Button variant="ghost" onClick={logout} leftIcon={<FiLogOut />} className="app-sidebar__logout">
           <span className="app-sidebar__label">Log out</span>
         </Button>

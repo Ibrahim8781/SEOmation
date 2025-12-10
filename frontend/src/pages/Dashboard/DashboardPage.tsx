@@ -6,7 +6,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { TopicAPI } from '@/api/topics';
 import { ContentAPI } from '@/api/content';
-import type { ContentItem, Topic } from '@/types';
+import { ScheduleAPI } from '@/api/schedule';
+import type { ContentItem, ScheduleJob, Topic } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { AnalyticsWidget } from '@/components/dashboard/AnalyticsWidget';
@@ -100,6 +101,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [content, setContent] = useState<ContentItem[]>([]);
+  const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generatingTopics, setGeneratingTopics] = useState(false);
@@ -116,10 +118,15 @@ export function DashboardPage() {
       if (!user) return;
       setLoading(true);
       try {
-        const [topicsRes, contentRes] = await Promise.all([TopicAPI.list(), ContentAPI.list()]);
+        const [topicsRes, contentRes, jobsRes] = await Promise.all([
+          TopicAPI.list(),
+          ContentAPI.list(),
+          ScheduleAPI.list()
+        ]);
         if (isMounted) {
           setTopics(topicsRes.data.items);
           setContent(contentRes.data.items);
+          setJobs(jobsRes.data.items);
           setTopicGenerationError(null);
           setAttemptedAutoGenerate(topicsRes.data.items.length > 0);
         }
@@ -202,6 +209,14 @@ export function DashboardPage() {
 
   const analyticsData = useMemo(() => buildAnalyticsData(content), [content]);
 
+  const scheduledDates = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.scheduledTime)
+        .map((job) => dayjs(job.scheduledTime).format('YYYY-MM-DD')),
+    [jobs]
+  );
+
   const suggestedTopics = useMemo(() => {
     if (!user) return [];
     return buildFallbackTopics(
@@ -271,7 +286,10 @@ export function DashboardPage() {
 
       <section className="dashboard-grid">
         <AnalyticsWidget data={analyticsData} />
-        <CalendarWidget />
+        <CalendarWidget
+          scheduledDates={scheduledDates}
+          onDateClick={() => navigate('/schedule')}
+        />
       </section>
 
       <section className="dashboard-topics">

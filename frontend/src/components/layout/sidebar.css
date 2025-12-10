@@ -161,69 +161,6 @@
   transition: opacity 0.2s ease, max-width 0.2s ease;
 }
 
-.app-sidebar__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
-}
-
-.app-sidebar__section-title {
-  margin: 0;
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: #9ca3af;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  transition: opacity 0.2s ease;
-  padding: 0 0.4rem;
-}
-
-.app-sidebar__module {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.55rem 0.65rem;
-  border-radius: 7px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  color: #6b7280;
-  font-weight: 500;
-  font-size: 0.85rem;
-  transition: box-shadow 0.2s ease;
-  cursor: pointer;
-}
-
-.app-sidebar__module:hover {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.app-sidebar__module-info {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-}
-
-.app-sidebar__module-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  color: #fff;
-  flex: 0 0 26px;
-  font-size: 0.85rem;
-}
-
-.app-sidebar__module-icon.instagram {
-  background: linear-gradient(135deg, #f58529 0%, #dd2a7b 50%, #8134af 100%);
-}
-
-.app-sidebar__module-icon.wordpress {
-  background: linear-gradient(135deg, #13578a 0%, #0f3e5f 100%);
-}
-
 .app-sidebar__footer {
   margin-top: auto;
   display: flex;
@@ -302,7 +239,6 @@
 }
 
 .app-sidebar--collapsed .app-sidebar__label,
-.app-sidebar--collapsed .app-sidebar__section-title,
 .app-sidebar--collapsed .app-sidebar__brand {
   opacity: 0;
   max-width: 0;
@@ -319,14 +255,6 @@
 .app-sidebar--collapsed .app-sidebar__nav-item:hover,
 .app-sidebar--collapsed .app-sidebar__nav-item--secondary:hover {
   transform: none;
-}
-
-.app-sidebar--collapsed .app-sidebar__module {
-  justify-content: center;
-}
-
-.app-sidebar--collapsed .app-sidebar__module svg:last-child {
-  display: none;
 }
 
 @media (max-width: 768px) {
