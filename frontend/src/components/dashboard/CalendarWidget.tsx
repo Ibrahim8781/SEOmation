@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import dayjs, { Dayjs } from 'dayjs';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import './calendarWidget.css';
@@ -24,11 +24,17 @@ function buildCalendarMatrix(reference: Dayjs) {
   return matrix;
 }
 
-export function CalendarWidget() {
+interface CalendarWidgetProps {
+  scheduledDates?: string[];
+  onDateClick?: (date: string) => void;
+}
+
+export function CalendarWidget({ scheduledDates = [], onDateClick }: CalendarWidgetProps) {
   const [currentMonth, setCurrentMonth] = useState(dayjs());
   const today = dayjs();
   const weeks = buildCalendarMatrix(currentMonth);
   const monthLabel = currentMonth.format('MMMM YYYY');
+  const scheduledSet = useMemo(() => new Set(scheduledDates), [scheduledDates]);
 
   return (
     <div className="calendar-widget glass-card">
@@ -58,8 +64,10 @@ export function CalendarWidget() {
           </span>
         ))}
         {weeks.flat().map((date) => {
+          const iso = date.format('YYYY-MM-DD');
           const isCurrentMonth = date.month() === currentMonth.month();
           const isToday = date.isSame(today, 'day');
+          const isScheduled = scheduledSet.has(iso);
           return (
             <button
               key={date.toString()}
@@ -67,17 +75,23 @@ export function CalendarWidget() {
               className={[
                 'calendar-widget__day',
                 isCurrentMonth ? '' : 'calendar-widget__day--muted',
-                isToday ? 'calendar-widget__day--today' : ''
+                isToday ? 'calendar-widget__day--today' : '',
+                isScheduled ? 'calendar-widget__day--scheduled' : ''
               ]
                 .filter(Boolean)
                 .join(' ')}
+              onClick={() => {
+                if (isScheduled && onDateClick) {
+                  onDateClick(iso);
+                }
+              }}
             >
               {date.date()}
             </button>
           );
         })}
       </div>
-      <button type="button" className="calendar-widget__cta">
+      <button type="button" className="calendar-widget__cta" onClick={() => onDateClick?.(today.format('YYYY-MM-DD'))}>
         Content Scheduler
       </button>
     </div>
