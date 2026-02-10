@@ -28,7 +28,7 @@ class FastAPIService {
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
         try {
-            console.log(`[FastAPI] ${method} ${url}`, JSON.stringify(payload, null, 2));
+            console.log(`[FastAPI] ${method} ${url}`);
 
             const response = await fetch(url, {
                 method,
@@ -41,12 +41,12 @@ class FastAPIService {
 
             if (!response.ok) {
                 const errorData = await response.text();
-                console.error(`[FastAPI Error] ${response.status}:`, errorData);
+                console.error(`[FastAPI Error] ${response.status}:`, errorData.slice(0, 200));
                 throw new ApiError(502, `FastAPI error: ${response.statusText}`);
             }
 
             const data = await response.json();
-            console.log(`[FastAPI Response]`, JSON.stringify(data, null, 2));
+            console.log(`[FastAPI Response] Success`);
             return data;
         } catch (error) {
             clearTimeout(timeoutId);

@@ -1,5 +1,5 @@
 from typing import List, Dict, Set
-import feedparser, httpx, logging
+import feedparser, httpx, logging, asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urlparse
 from urllib import robotparser
@@ -76,6 +76,20 @@ async def extract_main_text(url: str) -> str:
         tag.extract()
     text = " ".join([p.get_text(" ", strip=True) for p in soup.find_all(["p","li"])])[:6000]
     return text
+
+async def fetch_multiple_urls_parallel(urls: List[str], max_concurrent: int = 5) -> List[str]:
+    """Fetch multiple URLs in parallel with concurrency limit"""
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def fetch_with_limit(url: str) -> str:
+        async with semaphore:
+            return await fetch_html(url)
+    
+    tasks = [fetch_with_limit(url) for url in urls[:10]]  # Limit to top 10
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Filter out errors
+    return [r for r in results if isinstance(r, str) and r]
 
 async def google_news_items(query: str) -> List[Dict]:
     q = quote_plus(query)

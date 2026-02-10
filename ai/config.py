@@ -18,8 +18,17 @@ class Settings(BaseSettings):
 
     CACHE_TTL_SECONDS: int = Field(default=21600)
 
+    # Search API Configuration
     SERPER_API_KEY: str = Field(default="")
     SEARCH_SOURCES: str = Field(default="google_news,rss,serper")
+    
+    # SerpAPI (100 searches/month FREE)
+    # Sign up: https://serpapi.com/users/sign_up
+    SERPAPI_KEY: str = Field(default="")
+    
+    # Google Custom Search API (deprecated - use SerpAPI instead)
+    GOOGLE_CSE_API_KEY: str = Field(default="")
+    GOOGLE_CSE_ID: str = Field(default="")
 
     GN_HL: str = Field(default="en-PK")
     GN_GL: str = Field(default="PK")

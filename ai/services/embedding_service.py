@@ -1,10 +1,34 @@
 from typing import List
 from config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
-    if settings.EMBEDDER.lower() == "sbert":
-        return _embed_sbert(texts)
-    return _embed_cohere(texts)
+    """
+    Batch all embeddings in ONE call for optimal performance.
+    Handles large batches by splitting into API-compliant chunks.
+    """
+    if not texts:
+        return []
+    
+    # Cohere trial allows 100 requests/min
+    # Batch in groups of 96 to stay under limit
+    BATCH_SIZE = 96
+    all_embeddings = []
+    
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i:i + BATCH_SIZE]
+        
+        if settings.EMBEDDER.lower() == "sbert":
+            embeddings = _embed_sbert(batch)
+        else:
+            embeddings = _embed_cohere(batch)
+        
+        all_embeddings.extend(embeddings)
+    
+    logger.info("embed_texts", extra={"total_texts": len(texts), "batches": (len(texts) + BATCH_SIZE - 1) // BATCH_SIZE})
+    return all_embeddings
 
 def _embed_cohere(texts: List[str]) -> List[List[float]]:
     import cohere
