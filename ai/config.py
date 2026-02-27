@@ -1,9 +1,16 @@
+# ai/config.py - COMPLETE FILE (REPLACE ENTIRE FILE)
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
 class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(default="")
     GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
+    
+    # NEW: Gemini configuration
+    GEMINI_API_KEY: str = Field(default="")
+    GEMINI_MODEL: str = Field(default="gemini-2.5-flash")
+    
     EMBEDDER: str = Field(default="cohere")  # cohere | sbert
     COHERE_API_KEY: str = Field(default="")
     SBERT_MODEL: str = Field(default="sentence-transformers/all-MiniLM-L6-v2")
@@ -21,12 +28,9 @@ class Settings(BaseSettings):
     # Search API Configuration
     SERPER_API_KEY: str = Field(default="")
     SEARCH_SOURCES: str = Field(default="google_news,rss,serper")
-    
-    # SerpAPI (100 searches/month FREE)
-    # Sign up: https://serpapi.com/users/sign_up
     SERPAPI_KEY: str = Field(default="")
     
-    # Google Custom Search API (deprecated - use SerpAPI instead)
+    # Deprecated (keeping for backward compatibility)
     GOOGLE_CSE_API_KEY: str = Field(default="")
     GOOGLE_CSE_ID: str = Field(default="")
 
@@ -46,6 +50,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignore unknown env vars (e.g., deprecated provider keys)
+        extra = "ignore"
 
 settings = Settings()
