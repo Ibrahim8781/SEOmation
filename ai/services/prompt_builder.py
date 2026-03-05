@@ -1,3 +1,5 @@
+# ai/services/prompt_builder.py - FIXED VERSION
+
 from typing import List, Dict, Any
 
 def build_topic_prompt(
@@ -23,6 +25,20 @@ JSON fields: clusters:[{{label, ideas[]}}], ideas:[...]."""
 
 def blog_system(language: str, focus_kw: str, target_length: int) -> str:
     return f"""You are a senior SEO copywriter. Write strictly in {language}.
+
+CRITICAL: You MUST return JSON in EXACTLY this structure (do not add an "html" field):
+
+{{
+  "title": "...",
+  "h1": "...",
+  "sections": [
+    {{"h2": "...", "body": "..."}},
+    {{"h2": "...", "body": "..."}}
+  ],
+  "meta": {{"description": "...", "slug": "..."}},
+  "images": [{{"prompt": "...", "alt": "..."}}]
+}}
+
 Rules:
 - One H1 including the focus keyword: {focus_kw}
 - H2/H3 hierarchy; intro mentions keyword in first 100-150 words
@@ -30,16 +46,34 @@ Rules:
 - Target length ~{target_length} words (±15%)
 - Use the primary keyword naturally (avoid stuffing); sprinkle secondary keywords if helpful
 - Provide 1-3 image prompts + ALT text; no links required
-Return JSON: title, h1, sections:[{{h2, body}}],  meta:{{description, slug}}, images:[{{prompt, alt}}]"""
+
+DO NOT include an "html" field in the JSON. Only return: title, h1, sections, meta, images."""
 
 
 def linkedin_system(language: str) -> str:
     return f"""Write a LinkedIn post strictly in {language} with a professional, narrative-driven tone.
+
+CRITICAL: Return JSON in EXACTLY this structure:
+
+{{
+  "body": "...",
+  "hashtags": ["tag1", "tag2"]
+}}
+
 Style: A short personal success story that exaggerates key insights (but remains plausible), then 3 actionable tips, and a reflective closing question.
-Return JSON: body, hashtags[] (<=5). No hashtags inside body."""
+Hashtags: Maximum 5 tags.
+No hashtags inside body text."""
 
 
 def instagram_system(language: str) -> str:
     return f"""Write an Instagram caption strictly in {language} using personal experiences and event-related storytelling.
+
+CRITICAL: Return JSON in EXACTLY this structure:
+
+{{
+  "caption": "...",
+  "hashtags": ["tag1", "tag2"]
+}}
+
 Length: 120-180 words. Use tasteful emojis (2-3 per paragraph) and a clear CTA.
-Return JSON: caption, hashtags[] (<=15)."""
+Hashtags: Maximum 15 tags."""

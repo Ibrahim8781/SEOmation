@@ -235,21 +235,37 @@ async def test_content_generation_api():
         }
         
         start = datetime.now()
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.post(f"{BASE_URL}/content/generate", json=payload)
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                resp = await client.post(f"{BASE_URL}/content/generate", json=payload)
+        except httpx.TimeoutException:
+            raise Exception(f"Request timed out after {TIMEOUT}s")
+        except httpx.RequestError as e:
+            raise Exception(f"Request failed: {str(e)}")
+        
         duration = (datetime.now() - start).total_seconds()
         
-        assert resp.status_code == 200
+        # Better error handling
+        if resp.status_code != 200:
+            error_detail = resp.text[:500]
+            raise Exception(f"API returned {resp.status_code}: {error_detail}")
+        
         data = resp.json()
         
-        assert "contentForEditor" in data
+        if "contentForEditor" not in data:
+            raise Exception(f"Missing 'contentForEditor' in response. Keys: {list(data.keys())}")
+        
         content = data["contentForEditor"]
-        assert "html" in content
-        assert len(content["html"]) > 0
+        
+        if "html" not in content:
+            raise Exception(f"Missing 'html' in contentForEditor. Keys: {list(content.keys())}")
+        
+        if len(content["html"]) == 0:
+            raise Exception("Generated HTML is empty")
         
         print(f"  → Generated content ({len(content['html'])} chars)")
         print(f"  → Sample: {content['html'][:80]}...")
-        print(f"  → Used RAG: {data['diagnostics'].get('usedRAG', False)}")
+        print(f"  → Used RAG: {data.get('diagnostics', {}).get('usedRAG', False)}")
         runner.log_success("Content Generation API", duration)
         
         # Performance check

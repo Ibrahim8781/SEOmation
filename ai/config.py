@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(default="")
     GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
     
+    # NEW: Image Generation APIs
+    TOGETHER_API_KEY: str = Field(default="")  # For FLUX.1
+    HUGGINGFACE_API_KEY: str = Field(default="")  # For SDXL fallback
+    
+    
     # NEW: Gemini configuration
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = Field(default="gemini-2.5-flash")
@@ -53,3 +58,4 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+

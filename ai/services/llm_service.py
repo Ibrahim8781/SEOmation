@@ -1,4 +1,4 @@
-# ai/services/llm_service.py - COMPLETE FILE (REPLACE ENTIRE FILE)
+# ai/services/llm_service.py - FIXED VERSION WITH SAFETY CHECKS
 
 """
 LLM Service - Handles all LLM interactions
@@ -231,6 +231,35 @@ Research context (use for ideas, don't copy):
         temperature=0.7
     )
     
+    # SAFETY CHECK: Fix incorrect Gemini response structure
+    # Sometimes Gemini returns {"html": "...", "title": "..."} instead of the structured format
+    if platform == "blog":
+        if "html" in data and ("h1" not in data or "sections" not in data):
+            logger.warning("gemini_wrong_structure: Gemini returned HTML field, attempting to fix")
+            
+            # Extract structured data from the HTML if possible
+            # Or create minimal valid structure
+            if "h1" not in data:
+                data["h1"] = data.get("title", topic_or_idea)
+            
+            if "sections" not in data:
+                # Try to parse HTML into sections (minimal fallback)
+                html_content = data.get("html", "")
+                data["sections"] = [{
+                    "h2": "Introduction",
+                    "body": html_content[:500] if html_content else f"Content about {topic_or_idea}"
+                }]
+            
+            if "meta" not in data:
+                data["meta"] = {
+                    "description": f"{topic_or_idea} - {focus_keyword}",
+                    "slug": focus_keyword.lower().replace(" ", "-")
+                }
+            
+            # Remove the incorrect html field
+            if "html" in data:
+                del data["html"]
+    
     # Validate blog content
     issues = []
     if platform == "blog":
@@ -258,7 +287,7 @@ Research context (use for ideas, don't copy):
         repair_prompt = f"""The previous response had these issues:
 {'; '.join(issues)}
 
-Please fix these issues and return the corrected JSON."""
+Please fix these issues and return the corrected JSON in the EXACT structure specified."""
         
         try:
             data = await call_gemini_json(
@@ -271,10 +300,18 @@ Please fix these issues and return the corrected JSON."""
                 max_tokens=max_tokens,
                 temperature=0.4
             )
+            
+            # Apply safety check again after repair
+            if platform == "blog" and "html" in data and "sections" not in data:
+                if "sections" not in data:
+                    data["sections"] = [{"h2": "Introduction", "body": f"Content about {topic_or_idea}"}]
+                if "html" in data:
+                    del data["html"]
+                    
         except Exception as e:
             logger.warning(f"Repair failed: {e}, using original")
     
-    # Render HTML + plain text
+    # Render HTML + plain text using your existing renderers
     if platform == "blog":
         html = blog_to_html(data)
         plain = blog_to_plain(data)
@@ -287,6 +324,13 @@ Please fix these issues and return the corrected JSON."""
         html = instagram_to_html(data)
         plain = instagram_to_plain(data)
         packaged = {"structured": data, "html": html, "plainText": plain}
+    
+    # Final safety check
+    if not packaged.get("html") or not packaged.get("html").strip():
+        logger.error("content_empty_html: HTML is empty after rendering!")
+        logger.error(f"Data structure: {list(data.keys())}")
+        logger.error(f"Structured data: {json.dumps(data, indent=2)[:500]}")
+        raise RuntimeError("Generated HTML is empty - check prompt and data structure")
     
     diagnostics = {
         "usedRAG": (retrieved_context or {}).get("usedRAG", False),
