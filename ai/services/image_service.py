@@ -370,6 +370,7 @@ async def generate_image(
     try:
         result = await generate_with_flux(prompt, size)
         result["altText"] = alt_text
+        result["size"] = size
         logger.info(f"✅ Image generated with FLUX.1")
         return result
     except Exception as e:
@@ -379,6 +380,7 @@ async def generate_image(
     try:
         result = await generate_with_sdxl(prompt, size)
         result["altText"] = alt_text
+        result["size"] = size
         logger.info(f"⚠️ Image generated with SDXL (fallback)")
         return result
     except Exception as e:
@@ -387,6 +389,7 @@ async def generate_image(
     # Final fallback (always works)
     result = generate_placeholder(prompt, size)
     result["altText"] = alt_text
+    result["size"] = size
     logger.warning(f"⚠️ Using placeholder image (all services failed)")
     return result
 

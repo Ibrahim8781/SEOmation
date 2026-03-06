@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # NEW: Gemini configuration
     GEMINI_API_KEY: str = Field(default="")
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash")
+    GEMINI_MODEL: str = Field(default="gemini-2.0-flash-lite")  # 1500 RPD free tier, supported by new google.genai SDK
     
     EMBEDDER: str = Field(default="cohere")  # cohere | sbert
     COHERE_API_KEY: str = Field(default="")

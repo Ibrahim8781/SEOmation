@@ -1,12 +1,21 @@
-# ai/services/gemini_service.py - FINAL FIX
+# ai/services/gemini_service.py
 
+import asyncio
 import json
 import logging
+import os
 import re
 from typing import List, Dict
+import httpx
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# The google.genai SDK prefers GOOGLE_API_KEY over GEMINI_API_KEY when both are
+# present in the environment. Since we pass the key explicitly, stomp any stale
+# GOOGLE_API_KEY that may have leaked from the system environment so the SDK
+# doesn't log a confusing warning or use the wrong project's quota.
+os.environ.pop("GOOGLE_API_KEY", None)
 
 try:
     import google.genai as genai
@@ -22,43 +31,138 @@ except ImportError:
         GENAI_NEW_VERSION = False
 
 
-async def call_gemini(messages: List[Dict[str, str]], max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    if not GEMINI_AVAILABLE:
-        raise RuntimeError("google-generativeai not installed")
-    
-    if not settings.GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY not configured")
-    
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    
-    model = genai.GenerativeModel(
-        model_name=settings.GEMINI_MODEL,
-        generation_config={
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
-        }
-    )
-    
-    prompt_parts = []
+MAX_RETRIES = 3
+RETRY_DEFAULT_WAIT = 35  # seconds to wait if retry_delay not parseable from error
+
+
+def _build_prompt(messages: List[Dict[str, str]]) -> str:
+    """Convert chat messages list into a single prompt string."""
+    parts = []
     for msg in messages:
         role = msg.get("role", "user").upper()
         content = msg.get("content", "")
-        
         if role == "SYSTEM":
-            prompt_parts.append(f"INSTRUCTIONS:\n{content}\n")
+            parts.append(f"INSTRUCTIONS:\n{content}\n")
         elif role == "USER":
-            prompt_parts.append(f"USER:\n{content}\n")
+            parts.append(f"USER:\n{content}\n")
         elif role == "ASSISTANT":
-            prompt_parts.append(f"ASSISTANT:\n{content}\n")
-    
-    prompt = "\n".join(prompt_parts)
-    
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
-        raise RuntimeError(f"Gemini generation failed: {str(e)}")
+            parts.append(f"ASSISTANT:\n{content}\n")
+    return "\n".join(parts)
+
+
+def _parse_retry_delay(error_str: str) -> int:
+    """Extract retry_delay seconds from a 429 error message. Returns default if not found."""
+    match = re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_str)
+    if match:
+        return int(match.group(1)) + 3  # add 3s buffer
+    # Also handle 'Please retry in X.Ys' or 'retryDelay: Xs' formats
+    match2 = re.search(r'retry in (\d+(?:\.\d+)?)s', error_str, re.IGNORECASE)
+    if match2:
+        return int(float(match2.group(1))) + 3
+    match3 = re.search(r'retryDelay["\s:]+(\d+)', error_str)
+    if match3:
+        return int(match3.group(1)) + 3
+    return RETRY_DEFAULT_WAIT
+
+
+async def _call_groq_fallback(messages: List[Dict[str, str]], max_tokens: int, temperature: float, json_mode: bool = False) -> str:
+    """Call Groq as a fallback when Gemini quota is exhausted."""
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("Groq fallback failed: GROQ_API_KEY not configured")
+
+    logger.warning("Gemini quota exhausted — falling back to Groq")
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.GROQ_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(url, headers=headers, json=payload)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+
+def _is_daily_quota(error_str: str) -> bool:
+    """Return True if the 429 is a per-day limit (not worth retrying)."""
+    return "PerDay" in error_str or "per_day" in error_str.lower()
+
+
+async def call_gemini(messages: List[Dict[str, str]], max_tokens: int = 2000, temperature: float = 0.7, json_mode: bool = False) -> str:
+    if not GEMINI_AVAILABLE:
+        logger.warning("Gemini not installed — falling back to Groq")
+        return await _call_groq_fallback(messages, max_tokens, temperature, json_mode)
+
+    if not settings.GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not set — falling back to Groq")
+        return await _call_groq_fallback(messages, max_tokens, temperature, json_mode)
+
+    prompt = _build_prompt(messages)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            if GENAI_NEW_VERSION:
+                # google.genai (new SDK)
+                client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                    ),
+                )
+                return response.text
+            else:
+                # google.generativeai (legacy SDK)
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                model = genai.GenerativeModel(
+                    model_name=settings.GEMINI_MODEL,
+                    generation_config={
+                        "max_output_tokens": max_tokens,
+                        "temperature": temperature,
+                    },
+                )
+                response = model.generate_content(prompt)
+                return response.text
+
+        except Exception as e:
+            error_str = str(e)
+            is_quota = "429" in error_str or "quota" in error_str.lower() or "RESOURCE_EXHAUSTED" in error_str
+
+            if is_quota:
+                # Daily quota hit — no point waiting, fall back immediately
+                if _is_daily_quota(error_str):
+                    logger.warning("Gemini daily quota exhausted — falling back to Groq immediately")
+                    return await _call_groq_fallback(messages, max_tokens, temperature, json_mode)
+
+                # Per-minute rate limit — wait and retry
+                if attempt < MAX_RETRIES:
+                    wait = _parse_retry_delay(error_str)
+                    logger.warning(
+                        f"Gemini per-minute quota hit (attempt {attempt}/{MAX_RETRIES}). "
+                        f"Waiting {wait}s before retry..."
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                else:
+                    logger.warning("Gemini quota exhausted after all retries — falling back to Groq")
+                    return await _call_groq_fallback(messages, max_tokens, temperature, json_mode)
+
+            # Non-quota error — fail fast
+            logger.error(f"Gemini API error: {error_str}")
+            raise RuntimeError(f"Gemini generation failed: {error_str}")
+
+    # Safeguard
+    logger.warning("Gemini loop exited unexpectedly — falling back to Groq")
+    return await _call_groq_fallback(messages, max_tokens, temperature, json_mode)
 
 
 async def call_gemini_json(messages: List[Dict[str, str]], max_tokens: int = 2000, temperature: float = 0.7) -> Dict:
@@ -82,7 +186,7 @@ CRITICAL: Return ONLY valid JSON. Rules:
     # Try up to 2 times
     for attempt in range(2):
         try:
-            raw_response = await call_gemini(messages, max_tokens, temperature)
+            raw_response = await call_gemini(messages, max_tokens, temperature, json_mode=True)
             cleaned = _clean_json_response(raw_response)
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
