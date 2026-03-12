@@ -7,9 +7,11 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(default="")
     GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
     
-    # NEW: Image Generation APIs
-    TOGETHER_API_KEY: str = Field(default="")  # For FLUX.1
+    # Image Generation APIs
+    TOGETHER_API_KEY: str = Field(default="")  # For FLUX.1 (legacy)
     HUGGINGFACE_API_KEY: str = Field(default="")  # For SDXL fallback
+    KIE_API_KEY: str = Field(default="")  # kie.ai - primary image generation
+    KIE_MODEL: str = Field(default="bytedance/seedream")  # Cheapest Seedream 3.0
     
     
     # NEW: Gemini configuration
