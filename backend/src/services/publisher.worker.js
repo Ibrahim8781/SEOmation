@@ -102,16 +102,14 @@ async function publishWordPress(content, integration, media) {
   }
 
   const isWpCom = Boolean(siteId);
-  const endpoint = isWpCom
-    ? `https://public-api.wordpress.com/wp/v2/sites/${siteId}/posts`
-    : `${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
+  const baseEndpoint = isWpCom
+    ? `https://public-api.wordpress.com/wp/v2/sites/${siteId}`
+    : `${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2`;
+
+  const postsEndpoint = `${baseEndpoint}/posts`;
+  const mediaEndpoint = `${baseEndpoint}/media`;
+
   let htmlBody = content.html || content.text || '';
-  if (media?.wordpressFeatured) {
-    const imgUrl = await fetchImageUrl(content.id, media.wordpressFeatured);
-    if (imgUrl) {
-      htmlBody = `<img src="${imgUrl}" alt="${content.title || ''}" />\n${htmlBody}`;
-    }
-  }
 
   const body = {
     title: content.title,
@@ -119,15 +117,64 @@ async function publishWordPress(content, integration, media) {
     status: 'publish'
   };
 
-  if (!integration.accessToken || integration.metadata?.mock === true) {
+  // --- Upload image to WP media library and set as featured_media ---
+  if (media?.wordpressFeatured && integ.accessToken && integ.metadata?.mock !== true) {
+    const imgUrl = await fetchImageUrl(content.id, media.wordpressFeatured);
+    if (imgUrl) {
+      const imgBuffer = await fetchImageBuffer(imgUrl);
+      if (imgBuffer) {
+        try {
+          // Detect mime type from data URI prefix or default to jpeg
+          let mimeType = 'image/jpeg';
+          let filename = 'featured-image.jpg';
+          if (imgUrl.startsWith('data:')) {
+            const mimeMatch = imgUrl.match(/^data:([^;]+);/);
+            if (mimeMatch) {
+              mimeType = mimeMatch[1];
+              const ext = mimeType.split('/')[1] || 'jpg';
+              filename = `featured-image.${ext}`;
+            }
+          } else if (/\.png(\?|$)/i.test(imgUrl)) {
+            mimeType = 'image/png';
+            filename = 'featured-image.png';
+          }
+
+          const mediaResp = await fetch(mediaEndpoint, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${integ.accessToken}`,
+              'Content-Type': mimeType,
+              'Content-Disposition': `attachment; filename="${filename}"`
+            },
+            body: imgBuffer
+          });
+
+          if (mediaResp.ok) {
+            const mediaData = await mediaResp.json();
+            if (mediaData.id) {
+              body.featured_media = mediaData.id;
+              logger.info({ mediaId: mediaData.id }, 'WordPress: featured image uploaded');
+            }
+          } else {
+            const errText = await mediaResp.text();
+            logger.warn({ status: mediaResp.status, errText }, 'WordPress: media upload failed, posting without image');
+          }
+        } catch (uploadErr) {
+          logger.warn({ uploadErr }, 'WordPress: media upload error, posting without image');
+        }
+      }
+    }
+  }
+
+  if (!integ.accessToken || integ.metadata?.mock === true) {
     return {
       externalId: `mock-wp-${Date.now()}`,
-      response: { mock: true, endpoint, body },
+      response: { mock: true, endpoint: postsEndpoint, body },
       publishedAt: new Date()
     };
   }
 
-  const resp = await fetch(endpoint, {
+  const resp = await fetch(postsEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

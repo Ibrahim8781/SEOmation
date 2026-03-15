@@ -1,5 +1,7 @@
+// backend/src/controllers/schedule.controller.js - UPDATED
+
 import { ScheduleService } from '../services/schedule.service.js';
-import { startPublisherWorker } from '../services/publisher.worker.js';
+import { getScheduler } from '../services/smart-scheduler.service.js';
 import { HTTP } from '../utils/httpStatus.js';
 
 export const ScheduleController = {
@@ -14,7 +16,11 @@ export const ScheduleController = {
         payload.body.scheduledTime,
         payload.body.media
       );
-      startPublisherWorker()?.tick?.().catch?.(() => {});
+
+      // Register with smart scheduler
+      const scheduler = getScheduler();
+      await scheduler.scheduleJob(job);
+
       res.status(HTTP.CREATED).json({ job });
     } catch (e) {
       next(e);
@@ -31,7 +37,11 @@ export const ScheduleController = {
         payload.body.platform,
         payload.body.media
       );
-      startPublisherWorker()?.tick?.().catch?.(() => {});
+
+      // Execute immediately via scheduler
+      const scheduler = getScheduler();
+      await scheduler.scheduleJob(job);
+
       res.status(HTTP.CREATED).json({ job });
     } catch (e) {
       next(e);
@@ -51,7 +61,25 @@ export const ScheduleController = {
     try {
       const payload = req.validated ?? { params: req.params };
       const job = await ScheduleService.cancel(req.user.id, payload.params.jobId);
+
+      // Cancel in scheduler
+      const scheduler = getScheduler();
+      scheduler.cancelJob(job.id);
+
       res.json({ job });
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /**
+   * NEW: Get scheduler stats (for debugging/monitoring)
+   */
+  async stats(req, res, next) {
+    try {
+      const scheduler = getScheduler();
+      const stats = scheduler.getStats();
+      res.json(stats);
     } catch (e) {
       next(e);
     }
