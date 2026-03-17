@@ -13,6 +13,8 @@ class TopicSuggestRequest(BaseModel):
     seedKeywords: List[str] = []
     region: Optional[str] = None
     season: Optional[str] = None
+    contentGoals: Optional[str] = None
+    preferredContentTypes: List[str] = []
     count: int = Field(default=12, ge=5, le=40)
     includeTrends: bool = True
     namespace: Optional[str] = None
@@ -27,6 +29,11 @@ class ContentGenerateRequest(BaseModel):
     focusKeyword: str = Field(min_length=2)
     includeTrend: bool = True
     styleGuideBullets: List[str] = []
+    niche: Optional[str] = None
+    seedKeywords: List[str] = []
+    region: Optional[str] = None
+    season: Optional[str] = None
+    persona: Optional[Persona] = None
     namespace: Optional[str] = None
 
 class SeoHintRequest(BaseModel):
@@ -37,6 +44,7 @@ class SeoHintRequest(BaseModel):
 
 class ImageGenerateRequest(BaseModel):
     prompt: str
+    platform: Optional[str] = None
     style: Optional[str] = None
     sizes: List[str] = []
     count: int = Field(default=1, ge=1, le=6)

@@ -1,276 +1,204 @@
-# SEOmation – Full Stack Guide
+﻿# SEOmation Full Stack Guide
 
-This guide covers the full workflow for running and developing the SEOmation project now that the AI, backend, and frontend are integrated. Follow the sections in order—each layer depends on the previous one being healthy.
+SEOmation is split into three apps:
 
----
+- `ai/`: FastAPI service for topics, content, SEO hints, and image generation
+- `backend/`: Express + Prisma API for auth, onboarding, drafts, publishing, and scheduling
+- `frontend/`: React + Vite app for the user-facing product
 
-## 1. Architecture Overview
+## Current stack
 
-| Layer     | Tech stack | Purpose |
-|-----------|------------|---------|
-| Backend   | Node.js (Express), Prisma ORM, PostgreSQL | Auth, onboarding profile storage, AI orchestration, topic/content persistence |
-| AI Service| FastAPI (Python), Groq / Cohere / Qdrant integrations | Topic suggestions, blog/caption generation, SEO hinting |
-| Frontend  | React + Vite + TypeScript | User onboarding, dashboard, topic curation, blog writer UI |
+- Frontend: React 19, Vite 7, TypeScript, React Router
+- Backend: Node.js, Express, Prisma, PostgreSQL
+- AI: FastAPI, Google Gemini, Groq fallback, Qdrant/Cohere optional, live web research
 
-All three services talk locally during development:
+## Run locally
 
-- Backend exposes REST APIs on `http://localhost:3000/api`.
-- AI FastAPI listens on `http://127.0.0.1:8000`.
-- Frontend points to the backend via `VITE_API_BASE_URL`.
-- PostgreSQL can run either on the host or within Docker as long as it’s reachable on `localhost:<port>`.
+Start the services in this order.
 
----
-
-## 2. Prerequisites
-
-Install these locally before attempting to run anything:
-
-- **Node.js** ≥ 20.19.0 (Vite build issues warnings on older 20.x releases).
-- **npm** (bundled with Node).
-- **Python** ≥ 3.10 (the AI service uses FastAPI + async clients).
-- **PostgreSQL** 13+ (local install or Docker container published on a host port).
-- **Git**, **PowerShell** (on Windows), **Make** or similar optional command helpers.
-
-Optional but recommended:
-
-- `psql` CLI or pgAdmin for database checks.
-- Docker Desktop if you prefer containerised Postgres/Qdrant.
-
----
-
-## 3. Repository Layout
-
-```
-SEOmation/
-├── ai/          # Python FastAPI service
-├── backend/     # Node/Express API, Prisma schema
-├── frontend/    # React + Vite application
-└── README.md    # This document
-```
-
-Each subproject has its own `.env` file. Do **not** commit real secrets.
-
----
-
-## 4. Environment Variables
-
-### Backend (`SEOmation/backend/.env`)
-
-```ini
-DATABASE_URL="postgresql://postgres:<password>@localhost:5432/seomation?schema=public"
-JWT_ACCESS_SECRET="..."
-JWT_REFRESH_SECRET="..."
-AI_SERVICE_URL="http://127.0.0.1:8000"
-AI_MOCK=false
-PORT=3000
-NODE_ENV=development
-```
-
-Adjust credentials to match your Postgres instance (or Docker container). `AI_MOCK=true` returns fake responses without calling FastAPI but skips real generation.
-
-### AI service (`SEOmation/ai/.env`)
-
-```
-GROQ_API_KEY=...
-GROQ_MODEL=llama-3.3-70b-versatile
-EMBEDDER=cohere
-COHERE_API_KEY=...
-QDRANT_URL=...
-QDRANT_API_KEY=...
-DATABASE_URL=postgresql+psycopg2://postgres:<password>@localhost:5432/seomation
-APP_PORT=8000
-```
-
-Fill in whichever external providers you actually use; unset keys fall back to mock behaviour depending on the service.
-
-### Frontend (`SEOmation/frontend/.env`)
-
-```
-VITE_API_BASE_URL=http://localhost:3000/api
-```
-
----
-
-## 5. Installation Steps
-
-Perform these once per machine (or whenever dependencies change).
-
-### 5.1 AI dependencies
+### 1. AI service
 
 ```powershell
 cd SEOmation/ai
 python -m venv .venv
 .venv\Scripts\activate
-pip install --upgrade pip
 pip install -r requirements.txt
-# If you’re using pgvector extensions:
-pip install -r requirements-pgvector.txt
+uvicorn main:app --host 127.0.0.1 --port 8001
 ```
 
-### 5.2 Backend dependencies
+Health check:
+
+```powershell
+curl http://127.0.0.1:8001/health
+```
+
+### 2. Backend
 
 ```powershell
 cd SEOmation/backend
 npm install
 npx prisma generate
+npm run dev
 ```
 
-### 5.3 Frontend dependencies
+Health check:
+
+```powershell
+curl http://localhost:3000/health
+```
+
+### 3. Frontend
 
 ```powershell
 cd SEOmation/frontend
 npm install
+npm run dev
 ```
 
----
+Default frontend URL:
 
-## 6. Database Setup
+```text
+http://localhost:5173
+```
 
-1. Ensure PostgreSQL is running (`net start postgresql-x64-*` on Windows or check `docker ps` if containerised).
-2. Verify credentials with `psql -h localhost -p <port> -U <user> -d <database>`.
-3. Create the database if needed:
-   ```sql
-   CREATE DATABASE seomation;
-   ```
-4. Apply the schema:
-   ```powershell
-   cd SEOmation/backend
-   npx prisma migrate deploy
-   ```
+## Environment variables
 
-If you want seed data, create it manually or extend Prisma with seeding scripts.
+### `backend/.env`
 
----
+Required core values:
 
-## 7. Start the Stack (Development)
+```ini
+DATABASE_URL="postgresql://postgres:<password>@localhost:5432/seomation?schema=public"
+JWT_ACCESS_SECRET="..."
+JWT_REFRESH_SECRET="..."
+AI_SERVICE_URL="http://127.0.0.1:8001"
+PORT=3000
+NODE_ENV=development
+```
 
-> Use separate terminals (or tabs) so logs remain readable.
+Optional but supported:
 
-1. **AI service**
-   ```powershell
-   cd SEOmation/ai
-.venv\Scripts\activate
-   uvicorn main:app --host 127.0.0.1 --port 8000
-   ```
-   Health check: `curl http://127.0.0.1:8000/health`
+```ini
+AI_MOCK=false
+APP_BASE_URL=http://localhost:3000
+INTEGRATION_CALLBACK_BASE=http://localhost:3000
+PUBLIC_ASSET_BASE_URL=http://localhost:3000
+ASSET_PUBLIC_PATH=/media
+ASSET_STORAGE_DIR=
+AI_TOPIC_TIMEOUT_MS=60000
+AI_CONTENT_TIMEOUT_MS=360000
+AI_IMAGE_TIMEOUT_MS=450000
+AI_SEO_TIMEOUT_MS=30000
+```
 
-2. **Backend API**
-   ```powershell
-   cd SEOmation/backend
-   npm run dev
-   ```
-   Health check: `curl http://localhost:3000/api/health`
+### `ai/.env`
 
-3. **Frontend**
-   ```powershell
-   cd SEOmation/frontend
-   npm run dev
-   ```
-   Visit the URL shown (default `http://localhost:5173`).
+Main active values:
 
-The correct start order is AI → backend → frontend. The backend needs the AI service for live generation, and the frontend needs the backend for auth, topics, and content.
+```ini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
+GROQ_API_KEY=...
+GROQ_MODEL=llama-3.3-70b-versatile
+SERPAPI_KEY=...
+SERPER_API_KEY=...
+EMBEDDER=cohere
+COHERE_API_KEY=...
+QDRANT_URL=...
+QDRANT_API_KEY=...
+DATABASE_URL=postgresql+psycopg2://postgres:<password>@localhost:5432/seomation
+IMAGE_PROVIDER_ORDER=together,kie,huggingface,placeholder
+TOGETHER_API_KEY=...
+KIE_API_KEY=...
+HUGGINGFACE_API_KEY=...
+LOG_LEVEL=info
+```
 
----
+### `frontend/.env`
 
-## 8. Typical Workflow / Features to Test
+```ini
+VITE_API_BASE_URL=http://localhost:3000/api
+VITE_API_TIMEOUT_MS=360000
+```
 
-1. **Auth**
-   - Register a user via the frontend.
-   - Confirm `/api/auth/register` and `/api/users/me` succeed (check backend logs).
+## Useful commands
 
-2. **Onboarding**
-   - Complete the onboarding form once; data persists via `users/preferences.onboarding`.
-   - The dashboard loads afterwards without redirecting back to `/onboarding`.
-
-3. **Dashboard**
-   - Use “Refresh topics” to hit `/api/topics/generate`.
-   - Suggested topics include trend tags, focus keywords, and metadata.
-   - Selecting “Craft outline” routes to the writer with the topic pre-filled.
-
-4. **Blog Writer**
-   - With a topic selected, click “Send Prompt” to call `/api/content/generate`.
-   - Check that the response includes blog HTML/plain text, optional LinkedIn/Instagram variants, and SEO score/hints.
-   - Try a custom prompt (without `topicId`) to confirm the fallback branch works.
-
-5. **SEO Hints**
-   - The writer automatically calls `/api/content/:id/seo-hints`; verify the score and suggestions change when the focus keyword is missing.
-
-6. **Database verification (optional)**
-   - `npx prisma studio` or direct `psql` to inspect `topic` and `content` tables.
-
----
-
-## 9. Production Builds
-
-Once you’re ready to ship:
-
-- **AI service**: run via `uvicorn main:app --host 0.0.0.0 --port 8000`. Consider using gunicorn/uvicorn workers, proper logging, and environment-specific configs.
-- **Backend**:
-  ```powershell
-  cd SEOmation/backend
-  npm run build     # transpiles to dist/
-  npm run start     # uses node dist/server.js
-  ```
-- **Frontend**:
-  ```powershell
-  cd SEOmation/frontend
-  npm run build
-  npm run preview   # or serve dist/ with nginx/Vercel/etc.
-  ```
-
-Remember to copy the frontend `dist/` output to your static hosting solution. The Vite build warns when bundles exceed 500 kB; adjust `build.chunkSizeWarningLimit` or introduce code-splitting if necessary.
-
----
-
-## 10. Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `Authentication failed against database` | Wrong Postgres credentials or container not published on host port | Update `DATABASE_URL`, restart container, ensure `psql` can connect |
-| Backend logs show `FastAPI connection error` | AI service not running or wrong `AI_SERVICE_URL` | Start `uvicorn`, verify `http://127.0.0.1:8000/health` |
-| Blog drafts look like short social captions | Platform value wasn’t normalised (`BLOG` vs `blog`) | Restart backend (already fixed in `fastapi.service.js`) |
-| Frontend build warns about Node version | Node < 20.19.0 | Upgrade Node (e.g. via nvm-windows) |
-| JWT errors after refresh | Old tokens cached | Clear browser storage (localStorage + sessionStorage) |
-| 401s on protected routes | Missing/expired tokens | Log back in; backend refresh endpoint will rotate tokens |
-
----
-
-## 11. Useful Commands Reference
+### Frontend
 
 ```powershell
-# Prisma
-npx prisma migrate deploy
-npx prisma studio
-
-# FastAPI (with live reload)
-uvicorn main:app --reload --port 8000
-
-# Backend lint/tests (if configured)
-npm run lint
-npm test
-
-# Frontend type check & lint
-npm run typecheck
-npm run lint
+npm run dev
 npm run build
+npm run lint
 ```
 
----
+### Backend
 
-## 12. Contributing Tips
+```powershell
+npm run dev
+npm test
+npm run test:coverage
+```
 
-- Keep `.env` secrets out of version control.
-- Run `npm run build` in frontend before pushing to ensure TypeScript passing.
-- When touching Prisma schema, run `prisma migrate dev` (for local iterations) and commit the migration files.
-- Keep AI responses predictable in development by toggling `AI_MOCK` or setting smaller target lengths while prototyping.
-- Document any external API limits (Groq, Cohere, Qdrant) the team should be aware of.
+### AI
 
----
+```powershell
+uvicorn main:app --reload --port 8001
+python -m pytest ai/tests/test_rag_strategy.py
+```
 
-## 13. Support / Next Steps
+## Testing notes
 
-- If you add a new AI provider, extend `ai/services/llm_service.py` and update backend transformations accordingly.
-- For production hardening, add HTTPS termination, rate limiting (already stubbed in backend middleware), and centralised logging.
-- Consider containerising all services with Docker Compose once development flows stabilise.
+- Frontend build is the main local safety check for routing/UI changes.
+- Backend tests require a dedicated test database.
+- The backend test suite refuses to wipe a non-test database by design.
+- Point `DATABASE_URL` at a local test database name containing `test`, `jest`, or `ci`, or set `ALLOW_TEST_DATABASE_RESET=true` only if you know exactly what you are doing.
 
-Happy building! If you run into any new blockers, start with the troubleshooting table and then inspect the relevant service logs.***
+Example safe backend test database:
+
+```ini
+DATABASE_URL="postgresql://postgres:<password>@127.0.0.1:5432/seomation_test?schema=public"
+```
+
+## Current app behavior
+
+- Topic suggestions use indexed memory plus optional live trend research.
+- Content generation uses live research first and only uses indexed RAG when the topic matches the user's niche.
+- Draft SEO scoring is backend-driven and stays aligned with saved draft fields.
+- Generated images are persisted by the backend and served from `/media/...`.
+- Publishing and scheduling are handled by the backend service layer.
+
+## Important repo notes
+
+- There is now a root `.gitignore`; do not commit local `.env` files, `__pycache__`, build output, or generated media.
+- `backend/storage/` contains runtime media assets and should stay local.
+- If you change Prisma schema, create and commit the migration files.
+
+## Troubleshooting
+
+### Refresh sends me to the wrong page
+
+- Restart the frontend after route changes.
+- Clear browser `sessionStorage` if an old route was saved.
+- Make sure onboarding state is loaded before route guards are evaluated.
+
+### AI content fails even though search worked
+
+- Check Gemini quota logs first.
+- Groq is only a fallback and can rate-limit independently.
+- Search success does not mean the LLM provider chain succeeded.
+
+### Images generate but do not render
+
+- Make sure backend is serving `/media`.
+- Confirm `PUBLIC_ASSET_BASE_URL` or `APP_BASE_URL` matches how the browser reaches the backend.
+- Check the stored image URL in the draft and verify it loads directly.
+
+## Deployment reminder
+
+This repo does not currently have a backend build step that emits `dist/` for Node. The backend runs directly from `src/server.js`.
+
+For production:
+
+- run the AI app with `uvicorn`
+- run the backend with `node src/server.js` or a process manager
+- build the frontend with `npm run build` and host `frontend/dist`

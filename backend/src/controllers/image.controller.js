@@ -38,6 +38,7 @@ export const ImageController = {
       const payload = req.validated ?? { params: req.params, body: req.body };
       const result = await ImageService.generateAndAttach(payload.params.id, req.user.id, {
         prompt: payload.body.prompt,
+        platform: payload.body.platform,
         style: payload.body.style,
         sizes: payload.body.sizes,
         count: payload.body.count,

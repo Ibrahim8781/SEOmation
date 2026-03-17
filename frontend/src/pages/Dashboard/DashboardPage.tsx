@@ -52,7 +52,9 @@ function buildFallbackTopics(userId: string, topics: Topic[], niche?: string, au
     `Write a helpful guide on onboarding new ${theme} users`,
     `Map a content strategy on educating ${descriptors}`,
     `Share mistakes to avoid when scaling ${theme} marketing`,
-    `Explain how ${theme} teams can leverage AI for growth`
+    `Explain how ${theme} teams can leverage AI for growth`,
+    `Build a seasonal campaign angle for ${theme} buyers`,
+    `React to the latest market shift affecting ${theme} teams`
   ];
 
   return seeds.map((title, index) => ({
@@ -66,7 +68,7 @@ function buildFallbackTopics(userId: string, topics: Topic[], niche?: string, au
     targetKeyword: title.toLowerCase().split(' ').slice(0, 3).join(' '),
     rationale: `Suggested to engage ${descriptors} within ${theme}.`,
     aiMeta: {
-      trendTag: 'evergreen',
+      trendTag: index >= 5 ? 'news-angle' : index >= 4 ? 'seasonal-campaign' : 'evergreen',
       source: 'fallback'
     },
     status: 'SUGGESTED',
@@ -161,7 +163,10 @@ export function DashboardPage() {
         pains: businessProfile.audiencePainPoints,
         region: businessProfile.primaryRegion,
         season: businessProfile.seasonalFocus,
-        includeTrends: businessProfile.includeTrends
+        contentGoals: businessProfile.contentGoals,
+        preferredContentTypes: businessProfile.preferredContentTypes,
+        includeTrends: businessProfile.includeTrends,
+        count: 12
       };
 
       const { data } = await TopicAPI.generate({
@@ -226,7 +231,7 @@ export function DashboardPage() {
       businessProfile?.targetAudience,
       businessProfile?.primaryPlatforms?.[0],
       businessProfile?.language ?? user.language
-    ).slice(0, 4);
+    ).slice(0, 6);
   }, [businessProfile, topics, user]);
 
   if (loading && !user) {

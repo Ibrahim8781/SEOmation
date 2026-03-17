@@ -8,7 +8,7 @@ Tests FLUX.1, SDXL fallback, and placeholder generation.
 import asyncio
 import sys
 from datetime import datetime
-from services.image_service import (
+from services.image_generation_service import (
     generate_image,
     generate_images,
     get_resolution_for_platform
@@ -100,7 +100,7 @@ async def test_alt_text_generation():
     print("-" * 60)
     
     try:
-        from services.image_service import generate_alt_text
+        from services.image_generation_service import generate_alt_text
         
         prompt = "professional business meeting with laptop and coffee"
         alt_text = await generate_alt_text(prompt, "en")

@@ -12,6 +12,8 @@ export interface GenerateTopicsContext {
   pains?: string[];
   region?: string | null;
   season?: string | null;
+  contentGoals?: string | null;
+  preferredContentTypes?: string[];
   includeTrends?: boolean;
   count?: number;
   namespace?: string | null;

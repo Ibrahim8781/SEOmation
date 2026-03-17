@@ -54,7 +54,10 @@ async def generate_topics_json(
     region: str,
     season: str,
     count: int,
-    retrieved_context: Dict[str, Any]
+    retrieved_context: Dict[str, Any],
+    include_trends: bool = True,
+    content_goals: str = "",
+    preferred_content_types: List[str] | None = None
 ):
     """
     Generate topics using GROQ (optimized for speed).
@@ -64,10 +67,20 @@ async def generate_topics_json(
     context_lines = [f"[Source {i}] {sn.get('text', '')}" for i, sn in enumerate(snippets, 1)]
     
     system, user = build_topic_prompt(
-        language, niche, persona, seed_keywords, region, season, count, context_lines
+        language,
+        niche,
+        persona,
+        seed_keywords,
+        region,
+        season,
+        count,
+        context_lines,
+        include_trends,
+        content_goals,
+        preferred_content_types or []
     )
     
-    logger.info("llm_topics", extra={"model": "groq", "niche": niche})
+    logger.info("llm_topics_start model=groq niche=%s count=%s", niche, count)
     
     # Call Groq for speed
     raw = await chat_groq(
@@ -95,11 +108,17 @@ async def generate_topics_json(
         t = (it.get("ideaText") or it.get("title") or it.get("idea") or it.get("text") or "").strip()
         if not t:
             return {}
+        raw_trend_tag = (it.get("trendTag") or it.get("tag") or "").strip().lower()
+        trend_tag = raw_trend_tag or ("news-angle" if include_trends else "evergreen")
+        if trend_tag in {"trending-q4", "trending", "q4", "seasonal"}:
+            trend_tag = "seasonal-campaign"
+        if trend_tag not in {"evergreen", "seasonal-campaign", "news-angle"}:
+            trend_tag = "news-angle" if include_trends and "news" in trend_tag else "evergreen"
         return {
             "ideaText": t,
             "targetKeyword": (it.get("targetKeyword") or it.get("keyword") or "").strip()[:64],
             "rationale": (it.get("rationale") or it.get("why") or "").strip(),
-            "trendTag": (it.get("trendTag") or it.get("tag") or "evergreen"),
+            "trendTag": trend_tag,
         }
     
     candidates: List[Dict[str, Any]] = []
@@ -149,17 +168,54 @@ async def generate_topics_json(
             "language": language,
         })
     
-    # Fallback if no ideas
-    if not filtered and seed_keywords:
-        for sk in seed_keywords[:min(6, count)]:
-            title = f"{sk.title()} — practical guide for {niche}"
-            filtered.append({
-                "ideaText": title,
-                "targetKeyword": sk,
-                "rationale": f"Relevant to {niche} audience",
-                "trendTag": "evergreen",
-                "language": language,
-            })
+    def _append_fallback(title: str, keyword: str, rationale: str, trend_tag: str) -> None:
+        normalized_title = " ".join(str(title or "").split()).strip()
+        if not normalized_title:
+            return
+        if len(normalized_title) < 20:
+            normalized_title = f"{normalized_title} guide"
+        if len(normalized_title) > 120:
+            normalized_title = normalized_title[:117].rstrip() + "..."
+        folded = normalized_title.casefold()
+        if folded in seen:
+            return
+        seen.add(folded)
+        filtered.append({
+            "ideaText": normalized_title,
+            "targetKeyword": keyword[:64],
+            "rationale": rationale,
+            "trendTag": trend_tag,
+            "language": language,
+        })
+
+    fallback_keywords = [kw.strip() for kw in seed_keywords if kw and kw.strip()]
+    if not fallback_keywords and niche and niche.strip():
+        fallback_keywords = [niche.strip()]
+
+    seasonal_label = season.strip() if season else "this season"
+    fallback_patterns = [
+        ("{keyword} practical guide for {niche}", "Relevant to {niche} audience", "evergreen"),
+        ("How {keyword} changed over time", "Historical angle with clear search intent", "evergreen"),
+        ("What marketers can learn from {keyword}", "Strategic perspective for broader content", "evergreen"),
+    ]
+    if include_trends:
+        fallback_patterns.extend([
+            ("Latest updates around {keyword}", "Timely news-angle topic for current interest", "news-angle"),
+            ("Why {keyword} matters in {season}", "Seasonal/campaign angle connected to current interest", "seasonal-campaign"),
+        ])
+
+    while len(filtered) < count and fallback_keywords:
+        for keyword in fallback_keywords:
+            for template, rationale_template, trend_tag in fallback_patterns:
+                if len(filtered) >= count:
+                    break
+                title = template.format(keyword=keyword.title(), niche=niche, season=seasonal_label)
+                rationale = rationale_template.format(niche=niche, season=seasonal_label)
+                _append_fallback(title, keyword, rationale, trend_tag)
+            if len(filtered) >= count:
+                break
+
+    filtered = filtered[:count]
     
     diagnostics = {
         "usedRAG": retrieved_context.get("usedRAG", False) if retrieved_context else False,
@@ -167,7 +223,7 @@ async def generate_topics_json(
         "model": "groq"
     }
     
-    logger.info("topics_generated", extra={"count": len(filtered)})
+    logger.info("llm_topics_complete model=groq count=%s requested=%s", len(filtered), count)
     
     return clusters, filtered, diagnostics
 
@@ -186,15 +242,28 @@ async def generate_content_json(
     Generate content using GEMINI (optimized for quality).
     """
     # Import Gemini service
-    from services.gemini_service import call_gemini_json
+    from services.gemini_service import call_gemini_json, get_last_llm_execution
     
     # Build context
     ctx_lines = []
     if retrieved_context:
+        keywords = retrieved_context.get("keywords", [])
+        if keywords:
+            ctx_lines.append(f"Relevant keywords and angles: {', '.join(keywords[:15])}")
         snippets = retrieved_context.get("snippets", [])
         for i, sn in enumerate(snippets[:10], 1):
             if isinstance(sn, dict):
-                ctx_lines.append(f"[Source {i}] {sn.get('text', '')}")
+                title = sn.get("title", "")
+                url = sn.get("url", "")
+                text = sn.get('text', '')
+                parts = [f"[Source {i}]"]
+                if title:
+                    parts.append(f"Title: {title}")
+                if url:
+                    parts.append(f"URL: {url}")
+                if text:
+                    parts.append(f"Excerpt: {text}")
+                ctx_lines.append("\n".join(parts))
             else:
                 ctx_lines.append(f"[Source {i}] {str(sn)}")
     
@@ -219,7 +288,12 @@ Research context (use for ideas, don't copy):
 {context_block}
 """
     
-    logger.info("llm_content", extra={"model": "gemini", "platform": platform})
+    logger.info(
+        "llm_content_start model=%s platform=%s context_sources=%s",
+        settings.GEMINI_MODEL,
+        platform,
+        len((retrieved_context or {}).get("snippets", [])),
+    )
     
     # Call Gemini for quality
     data = await call_gemini_json(
@@ -274,15 +348,18 @@ Research context (use for ideas, don't copy):
     else:
         sample_text = data.get("caption", "")
     
+    expected_language = (language or "en").split("-")[0].lower()
+
     try:
-        if sample_text and detect(sample_text[:200]) != language:
-            issues.append(f"Output language must be {language}")
+        detected_language = detect(sample_text[:200]).lower() if sample_text else ""
+        if detected_language and detected_language != expected_language:
+            issues.append(f"Output language must be {expected_language}")
     except Exception:
         pass
     
     # Repair if needed
     if issues:
-        logger.warning("content_repair", extra={"issues": issues})
+        logger.warning(f"content_repair: fixing {'; '.join(issues)}")
         
         repair_prompt = f"""The previous response had these issues:
 {'; '.join(issues)}
@@ -332,14 +409,25 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
         logger.error(f"Structured data: {json.dumps(data, indent=2)[:500]}")
         raise RuntimeError("Generated HTML is empty - check prompt and data structure")
     
+    llm_execution = get_last_llm_execution()
     diagnostics = {
         "usedRAG": (retrieved_context or {}).get("usedRAG", False),
         "repairAttempted": bool(issues),
         "platform": platform,
-        "model": "gemini"
+        "model": llm_execution.get("model", settings.GEMINI_MODEL),
+        "provider": llm_execution.get("provider", "gemini"),
+        "liveSources": (retrieved_context or {}).get("liveSources", 0),
+        "indexedSources": (retrieved_context or {}).get("indexedSources", 0)
     }
     
-    logger.info("content_generated", extra={"platform": platform, "length": len(plain)})
+    logger.info(
+        "llm_content_complete provider=%s model=%s platform=%s length=%s repair=%s",
+        diagnostics["provider"],
+        diagnostics["model"],
+        platform,
+        len(plain),
+        bool(issues),
+    )
     
     return packaged, diagnostics
 

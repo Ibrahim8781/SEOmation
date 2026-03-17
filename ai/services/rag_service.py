@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from config import settings
 from utils.text_processing import chunk_text
-from services.scraper_service import candidate_urls, extract_main_text
+from services.scraper_service import candidate_urls
 from services.embedding_service import embed_texts
 from utils.cache import get_if_fresh, set_with_ttl
 import asyncio, uuid, logging

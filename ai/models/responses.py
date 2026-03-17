@@ -20,10 +20,13 @@ class SeoHintResponse(BaseModel):
 
 class GeneratedImage(BaseModel):
     url: str
-    base64: str
+    base64: Optional[str] = None
     size: str
     provider: str
     altText: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+    format: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None
 
 class ImageGenerateResponse(BaseModel):

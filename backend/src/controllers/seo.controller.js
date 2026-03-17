@@ -39,6 +39,14 @@ export const SeoController = {
 
       const html = payload.body.bodyHtml || payload.body.html || owned.html || '';
       const text = payload.body.text || owned.text || '';
+      const linkedImages = await prisma.contentImageLink.findMany({
+        where: { contentId },
+        include: { image: true }
+      });
+      const seoImages = [
+        ...(payload.body.images || []),
+        ...linkedImages.map((link) => ({ altText: link.image?.altText || undefined }))
+      ].filter((image) => image?.altText);
 
       const seo = SeoService.scoreContent({
         title: payload.body.title || owned.title,
@@ -46,7 +54,7 @@ export const SeoController = {
         bodyHtml: html || text,
         primaryKeyword,
         secondaryKeywords: payload.body.secondaryKeywords || owned.secondaryKeywords || [],
-        images: payload.body.images || []
+        images: seoImages
       });
 
       // merge aiMeta.social updates

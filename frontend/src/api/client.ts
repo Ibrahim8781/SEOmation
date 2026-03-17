@@ -2,7 +2,7 @@ import axios, { AxiosHeaders, type AxiosError, type InternalAxiosRequestConfig }
 import type { AuthResponse, AuthTokens } from '@/types';
 import { API_BASE_URL } from '@/utils/constants';
 
-const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = 360000;
 
 const apiTimeoutMs = (() => {
   const rawValue = import.meta.env?.VITE_API_TIMEOUT_MS;

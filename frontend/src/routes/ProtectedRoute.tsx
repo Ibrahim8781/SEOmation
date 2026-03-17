@@ -5,10 +5,10 @@ import { FullScreenLoader } from '@/components/common/FullScreenLoader';
 
 export function ProtectedRoute() {
   const { user, initializing } = useAuth();
-  const { isOnboarded } = useOnboarding();
+  const { isOnboarded, initializing: onboardingInitializing } = useOnboarding();
   const location = useLocation();
 
-  if (initializing) {
+  if (initializing || onboardingInitializing) {
     return <FullScreenLoader message="Preparing your workspace..." />;
   }
 

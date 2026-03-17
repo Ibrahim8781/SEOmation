@@ -111,6 +111,7 @@ export interface SaveDraftPayload {
 
 export interface GenerateImagePayload {
   prompt: string;
+  platform?: 'blog' | 'linkedin' | 'instagram';
   style?: string;
   sizes?: string[];
   count?: number;

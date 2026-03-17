@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FiCheck, FiExternalLink, FiLink, FiRefreshCw, FiTrash2 } from 'react-icons/fi';
+import { useSearchParams } from 'react-router-dom';
 import { IntegrationsAPI } from '@/api/integrations';
 import type { IntegrationPlatform, PlatformIntegration } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
@@ -12,15 +13,103 @@ const providers: { label: string; value: IntegrationPlatform; description: strin
   { label: 'Instagram', value: 'INSTAGRAM', description: 'Publish images and captions.' }
 ];
 
+function readRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function readString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function formatPlatformLabel(platform: IntegrationPlatform) {
+  return providers.find((provider) => provider.value === platform)?.label ?? platform;
+}
+
+function formatConnectionTitle(integration: PlatformIntegration) {
+  const metadata = readRecord(integration.metadata);
+
+  if (integration.platform === 'WORDPRESS') {
+    return readString(metadata?.siteName) ?? readString(metadata?.siteUrl) ?? 'Site connected';
+  }
+
+  if (integration.platform === 'LINKEDIN') {
+    const profile = readRecord(metadata?.profile);
+    const oidc = readRecord(profile?.oidc);
+    return readString(oidc?.name) ?? readString(oidc?.email) ?? 'LinkedIn account connected';
+  }
+
+  if (integration.platform === 'INSTAGRAM') {
+    return readString(metadata?.username) ?? 'Instagram account connected';
+  }
+
+  return 'Connected';
+}
+
+function formatConnectionDetails(integration: PlatformIntegration) {
+  const metadata = readRecord(integration.metadata);
+  const details: string[] = [];
+
+  if (integration.platform === 'WORDPRESS') {
+    const siteUrl = readString(metadata?.siteUrl);
+    const availableSites = Array.isArray(metadata?.availableSites) ? metadata.availableSites.length : 0;
+
+    if (siteUrl) {
+      details.push(siteUrl.replace(/^https?:\/\//i, ''));
+    }
+    if (availableSites > 1) {
+      details.push(`${availableSites} available sites detected`);
+    }
+  }
+
+  if (integration.platform === 'LINKEDIN') {
+    const metadataRecord = readRecord(integration.metadata);
+    const profile = readRecord(metadataRecord?.profile);
+    const oidc = readRecord(profile?.oidc);
+    const email = readString(oidc?.email);
+    const urn = readString(metadataRecord?.urn);
+
+    if (email) {
+      details.push(email);
+    } else if (urn) {
+      details.push(urn.replace('urn:li:person:', 'Member '));
+    }
+  }
+
+  if (integration.platform === 'INSTAGRAM') {
+    const username = readString(metadata?.username);
+    const businessId = readString(metadata?.instagramBusinessId);
+
+    if (username) {
+      details.push(`@${username.replace(/^@/, '')}`);
+    } else if (businessId) {
+      details.push(`Business ID ${businessId}`);
+    }
+  }
+
+  details.push(`Updated ${new Date(integration.updatedAt).toLocaleString()}`);
+
+  if (integration.expiresAt) {
+    details.push(`Expires ${new Date(integration.expiresAt).toLocaleDateString()}`);
+  }
+
+  return details;
+}
+
 export function IntegrationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<PlatformIntegration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<IntegrationPlatform | null>(null);
   const [status, setStatus] = useState('');
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (options?: { background?: boolean }) => {
+    if (!options?.background) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const { data } = await IntegrationsAPI.list();
@@ -28,14 +117,38 @@ export function IntegrationsPage() {
     } catch (err) {
       setError(extractErrorMessage(err, 'Unable to load integrations.'));
     } finally {
-      setLoading(false);
+      if (!options?.background) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
+
+  useEffect(() => {
+    const integrationStatus = searchParams.get('integration_status');
+    const platform = searchParams.get('platform') as IntegrationPlatform | null;
+    const message = searchParams.get('message');
+
+    if (!integrationStatus || !platform) {
+      return;
+    }
+
+    if (integrationStatus === 'success') {
+      setStatus(message || `${formatPlatformLabel(platform)} connected successfully.`);
+      void load({ background: true });
+    } else {
+      setError(message || `Unable to connect ${formatPlatformLabel(platform)}.`);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('integration_status');
+    nextParams.delete('platform');
+    nextParams.delete('message');
+    setSearchParams(nextParams, { replace: true });
+  }, [load, searchParams, setSearchParams]);
 
   const connect = async (platform: IntegrationPlatform) => {
     setError(null);
@@ -43,7 +156,7 @@ export function IntegrationsPage() {
     try {
       setConnecting(platform);
       const { data } = await IntegrationsAPI.getAuthUrl(platform);
-      window.open(data.url, '_blank', 'noopener,noreferrer');
+      window.location.assign(data.url);
     } catch (err) {
       setError(extractErrorMessage(err, 'Unable to start connection.'));
       setConnecting(null);
@@ -55,6 +168,8 @@ export function IntegrationsPage() {
     try {
       await IntegrationsAPI.disconnect(platform);
       setItems((prev) => prev.filter((item) => item.platform !== platform));
+      setError(null);
+      setStatus(`${formatPlatformLabel(platform)} disconnected.`);
     } catch (err) {
       setError(extractErrorMessage(err, 'Unable to disconnect.'));
     }
@@ -67,7 +182,7 @@ export function IntegrationsPage() {
           <h1>Integrations</h1>
           <p>Connect your publishing platforms to schedule or publish directly.</p>
         </div>
-        <Button variant="ghost" leftIcon={<FiRefreshCw />} onClick={load} isLoading={loading}>
+        <Button variant="ghost" leftIcon={<FiRefreshCw />} onClick={() => void load()} isLoading={loading}>
           Refresh
         </Button>
       </header>
@@ -87,13 +202,17 @@ export function IntegrationsPage() {
                 {connected ? <FiCheck color="#52c41a" /> : <FiLink />}
               </div>
               {connected && (
-                <div className="integration-card__meta">
-                  <span>ID: {connected.id.slice(0, 8)}</span>
-                  {connected.expiresAt && (
-                    <span>Expires {new Date(connected.expiresAt).toLocaleDateString()}</span>
-                  )}
+                <div className="integration-card__connected">
+                  <div className="integration-card__badge">Connected</div>
+                  <strong>{formatConnectionTitle(connected)}</strong>
+                  <div className="integration-card__meta">
+                    {formatConnectionDetails(connected).map((detail) => (
+                      <span key={detail}>{detail}</span>
+                    ))}
+                  </div>
                 </div>
               )}
+              {!connected && <div className="integration-card__empty">Not connected yet.</div>}
               <div className="integration-card__actions">
                 {!connected && (
                   <Button

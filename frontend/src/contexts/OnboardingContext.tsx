@@ -14,6 +14,7 @@ import { useAuthContext } from './AuthContext';
 interface OnboardingContextValue {
   businessProfile: BusinessProfile | null;
   isOnboarded: boolean;
+  initializing: boolean;
   saveProgress: (profile: BusinessProfile, completed?: boolean) => void;
   completeOnboarding: (profile: BusinessProfile) => void;
   resetOnboarding: () => void;
@@ -25,11 +26,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const { user } = useAuthContext();
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+  const initializing = user ? resolvedUserId !== user.id : false;
 
   useEffect(() => {
     if (!user) {
       setBusinessProfile(null);
       setIsOnboarded(false);
+      setResolvedUserId(null);
       return;
     }
 
@@ -38,12 +42,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setBusinessProfile(onboardingPrefs.businessProfile);
       setIsOnboarded(Boolean(onboardingPrefs.completed));
       storeOnboardingState(user.id, onboardingPrefs.businessProfile, Boolean(onboardingPrefs.completed));
+      setResolvedUserId(user.id);
       return;
     }
 
     const stored = loadOnboardingState(user.id);
     setBusinessProfile(stored.profile ?? null);
     setIsOnboarded(stored.completed);
+    setResolvedUserId(user.id);
   }, [user]);
 
   const saveProgress = useCallback(
@@ -74,11 +80,12 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     () => ({
       businessProfile,
       isOnboarded,
+      initializing,
       saveProgress,
       completeOnboarding,
       resetOnboarding
     }),
-    [businessProfile, completeOnboarding, isOnboarded, resetOnboarding, saveProgress]
+    [businessProfile, completeOnboarding, initializing, isOnboarded, resetOnboarding, saveProgress]
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
