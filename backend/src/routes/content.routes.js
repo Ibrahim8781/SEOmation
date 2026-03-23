@@ -7,7 +7,6 @@ import { ImageController } from '../controllers/image.controller.js';
 import { generateContentSchema, updateContentSchema, seoHintsSchema } from '../validators/content.schemas.js';
 import { saveDraftWithSeoSchema } from '../validators/seo.schemas.js';
 import { generateImageSchema, uploadImageSchema, deleteImageLinkSchema } from '../validators/image.schemas.js';
-import { platformParamSchema } from '../validators/integration.schemas.js';
 
 const router = express.Router();
 

@@ -1,7 +1,12 @@
 import { config } from '../config/index.js';
 import ApiError from '../utils/ApiError.js';
 
-const TIMEOUT_MS = 120000; // 2 minutes as requested
+const ENDPOINT_TIMEOUTS = {
+    '/topic/suggest': config.ai.timeouts.topicsMs,
+    '/content/generate': config.ai.timeouts.contentMs,
+    '/image/generate': config.ai.timeouts.imageMs,
+    '/seo/hints': config.ai.timeouts.seoMs
+};
 
 class FastAPIService {
     constructor() {
@@ -12,7 +17,7 @@ class FastAPIService {
     /**
      * Generic HTTP request handler for FastAPI calls
      */
-    async request(endpoint, payload, method = 'POST') {
+    async request(endpoint, payload, method = 'POST', options = {}) {
         // If mock mode is enabled, return mock data
         if (this.isMock) {
             console.warn(`[AI Mock] ${method} ${endpoint}`, payload);
@@ -25,7 +30,8 @@ class FastAPIService {
 
         const url = `${this.baseUrl}${endpoint}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        const timeoutMs = options.timeoutMs ?? ENDPOINT_TIMEOUTS[endpoint] ?? config.ai.timeouts.contentMs;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
             console.log(`[FastAPI] ${method} ${url}`);
@@ -52,7 +58,7 @@ class FastAPIService {
             clearTimeout(timeoutId);
 
             if (error.name === 'AbortError') {
-                throw new ApiError(504, 'FastAPI request timeout (2 minutes exceeded)');
+                throw new ApiError(504, `FastAPI request timeout (${Math.round(timeoutMs / 1000)}s exceeded)`);
             }
             if (error instanceof ApiError) throw error;
 
@@ -74,12 +80,16 @@ class FastAPIService {
             seedKeywords: context?.seedKeywords || [],
             region: context?.region || null,
             season: context?.season || null,
+            contentGoals: context?.contentGoals || null,
+            preferredContentTypes: context?.preferredContentTypes || [],
             count: context?.count || 12,
             includeTrends: context?.includeTrends !== false,
             namespace: context?.namespace || null
         };
 
-        const response = await this.request('/topic/suggest', payload);
+        const response = await this.request('/topic/suggest', payload, 'POST', {
+            timeoutMs: ENDPOINT_TIMEOUTS['/topic/suggest']
+        });
 
         const diagnostics = response?.diagnostics || {};
         const seen = new Set();
@@ -132,7 +142,17 @@ class FastAPIService {
      * Generate content from FastAPI
      * Called by: POST /api/content/generate (both topicId and prompt flows combined)
      */
-    async generateContent(userId, platform, language, topicOrIdea, focusKeyword, tone = 'friendly', targetLength = 1200, styleGuide = []) {
+    async generateContent(
+        userId,
+        platform,
+        language,
+        topicOrIdea,
+        focusKeyword,
+        tone = 'friendly',
+        targetLength = 1200,
+        styleGuide = [],
+        context = {}
+    ) {
         const normalizedPlatform = String(platform || 'blog').toLowerCase();
         const normalizedLanguage = String(language || 'EN').toLowerCase();
         const payload = {
@@ -143,12 +163,19 @@ class FastAPIService {
             tone,
             targetLength,
             focusKeyword,
-            includeTrend: true,
+            includeTrend: context?.includeTrend !== false,
             styleGuideBullets: styleGuide || [],
-            namespace: null
+            niche: context?.niche || null,
+            seedKeywords: context?.seedKeywords || [],
+            region: context?.region || null,
+            season: context?.season || null,
+            persona: context?.persona || null,
+            namespace: context?.namespace || null
         };
 
-        const response = await this.request('/content/generate', payload);
+        const response = await this.request('/content/generate', payload, 'POST', {
+            timeoutMs: ENDPOINT_TIMEOUTS['/content/generate']
+        });
 
         const contentForEditor = response?.contentForEditor || {};
         const structured = contentForEditor.structured || null;
@@ -156,15 +183,36 @@ class FastAPIService {
         const plainText = contentForEditor.plainText || '';
         const diagnostics = response?.diagnostics || null;
         const metrics = response?.metrics || {};
+        const structuredObject =
+            structured && typeof structured === 'object' && !Array.isArray(structured) ? structured : null;
+        const structuredMeta =
+            structuredObject?.meta && typeof structuredObject.meta === 'object' && !Array.isArray(structuredObject.meta)
+                ? structuredObject.meta
+                : null;
+        const generatedTitle =
+            (typeof structuredObject?.title === 'string' && structuredObject.title.trim()) ||
+            (typeof structuredObject?.h1 === 'string' && structuredObject.h1.trim()) ||
+            topicOrIdea;
+        const generatedMetaDescription =
+            typeof structuredMeta?.description === 'string' && structuredMeta.description.trim()
+                ? structuredMeta.description.trim()
+                : null;
+        const generatedSlug =
+            typeof structuredMeta?.slug === 'string' && structuredMeta.slug.trim()
+                ? structuredMeta.slug.trim()
+                : null;
 
         return {
-            title: topicOrIdea,
+            title: generatedTitle,
             html,
             text: plainText,
             structured,
+            metaDescription: generatedMetaDescription,
+            primaryKeyword: focusKeyword || null,
             seoMeta: {
                 keywords: this.extractKeywords(plainText),
-                focusKeyword
+                focusKeyword,
+                slug: generatedSlug
             },
             grammarScore: metrics.grammarScore ?? null,
             readabilityScore: metrics.readabilityScore ?? null,
@@ -189,7 +237,9 @@ class FastAPIService {
             content
         };
 
-        const response = await this.request('/seo/hints', payload);
+        const response = await this.request('/seo/hints', payload, 'POST', {
+            timeoutMs: ENDPOINT_TIMEOUTS['/seo/hints']
+        });
 
         return {
             score: response.score || 0,
@@ -200,16 +250,19 @@ class FastAPIService {
     /**
      * Generate images + alt text from FastAPI
      */
-    async generateImages(prompt, { style = null, sizes = ['1024x1024'], count = 1, language = 'en' } = {}) {
+    async generateImages(prompt, { platform = 'blog', style = null, sizes = ['1024x1024'], count = 1, language = 'en' } = {}) {
         const payload = {
             prompt,
+            platform,
             style,
             sizes,
             count,
             language
         };
 
-        return this.request('/image/generate', payload);
+        return this.request('/image/generate', payload, 'POST', {
+            timeoutMs: ENDPOINT_TIMEOUTS['/image/generate']
+        });
     }
 
     /**
@@ -292,6 +345,9 @@ class FastAPIService {
                     base64: dataUrl.split(',')[1],
                     size,
                     provider: 'mock',
+                    width: Number.parseInt(String(size).split('x')[0], 10) || 1024,
+                    height: Number.parseInt(String(size).split('x')[1], 10) || 1024,
+                    format: 'png',
                     position: idx
                 }))
             };

@@ -1,37 +1,20 @@
 from typing import List, Dict, Set
 import feedparser, httpx, logging, asyncio
-from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urlparse
 from urllib import robotparser
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {"User-Agent": "SEOmationBot/1.0 (+https://example.com/bot)"}
-
-# Small, curated RSS sets per broad niche; kept short to avoid noise.
-TOP_RSS = {
-    "seo": [
-        "https://neilpatel.com/blog/feed/",
-        "https://backlinko.com/blog/feed",
-        "https://moz.com/blog/feed"
-    ],
-    "tech": [
-        "https://www.theverge.com/rss/index.xml",
-        "https://techcrunch.com/feed/"
-    ],
-    "business": [
-        "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-        "https://www.forbes.com/most-popular/feed/"
-    ],
-    "sports": [
-        "https://www.espn.com/espn/rss/news",
-        "https://www.skysports.com/rss/12040"
-    ],
-    "general": [
-        "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-        "https://feeds.bbci.co.uk/news/rss.xml"
-    ]
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
 }
 
 def _allowed(url: str) -> bool:
@@ -44,18 +27,6 @@ def _allowed(url: str) -> bool:
     except Exception:
         return True
 
-async def fetch_rss(niche: str) -> List[Dict]:
-    urls = TOP_RSS.get(niche.lower(), []) or TOP_RSS.get("general", [])
-    items: List[Dict] = []
-    for u in urls:
-        try:
-            fp = feedparser.parse(u)
-            for e in fp.entries[:8]:
-                items.append({"title": e.get("title", ""), "url": e.get("link", "")})
-        except Exception:
-            continue
-    return items
-
 async def fetch_html(url: str) -> str:
     if not _allowed(url):
         return ""
@@ -66,16 +37,6 @@ async def fetch_html(url: str) -> str:
             return r.text
     except Exception:
         return ""
-
-async def extract_main_text(url: str) -> str:
-    html = await fetch_html(url)
-    if not html:
-        return ""
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script","style","nav","footer","header","noscript"]):
-        tag.extract()
-    text = " ".join([p.get_text(" ", strip=True) for p in soup.find_all(["p","li"])])[:6000]
-    return text
 
 async def fetch_multiple_urls_parallel(urls: List[str], max_concurrent: int = 5) -> List[str]:
     """Fetch multiple URLs in parallel with concurrency limit"""
@@ -134,11 +95,7 @@ async def candidate_urls(niche: str, seed_keywords: List[str], language: str, re
     gitems = await google_news_items(q)
     urls.extend([it["url"] for it in gitems if it.get("url")])
 
-    # Baseline RSS by niche/general
-    rss = await fetch_rss(niche)
-    urls.extend([it["url"] for it in rss if it.get("url")])
-
-    logger.info("RAG candidate_urls", extra={"query": q, "serper": len(surls), "gnews": len(gitems), "rss": len(rss)})
+    logger.info("RAG candidate_urls", extra={"query": q, "serper": len(surls), "gnews": len(gitems)})
 
     # Dedup
     seen: Set[str] = set()

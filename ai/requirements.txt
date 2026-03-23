@@ -13,12 +13,6 @@ pytest==7.4.3
 pytest-cov==4.1.0
 pytest-asyncio==0.21.1
 pytest-mock==3.12.0
-
-# NEW: Updated DuckDuckGo package
-ddgs==1.6.4
-
-# NEW: Machine learning for RAG
+ddgs==9.11.4
 scikit-learn==1.4.2
-
-# NEW: Google Gemini
-google-generativeai==0.8.3
+google-genai>=1.0.0,<2.0.0

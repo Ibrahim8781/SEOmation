@@ -11,18 +11,64 @@ function normalizePlatform(value) {
   return p;
 }
 
-function buildState(userId, platform) {
-  return `${userId}:${platform}:${crypto.randomBytes(6).toString('hex')}`;
+function sanitizeOrigin(value) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(String(value));
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return parsed.origin;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function buildState(userId, platform, clientOrigin) {
+  const payload = {
+    userId,
+    platform,
+    nonce: crypto.randomBytes(6).toString('hex')
+  };
+  const origin = sanitizeOrigin(clientOrigin);
+  if (origin) {
+    payload.origin = origin;
+  }
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+function parseLegacyState(state) {
+  const [userId, platform, nonce] = String(state || '').split(':');
+  if (!userId || !platform || !nonce) throw new ApiError(400, 'Invalid state');
+  return { userId, platform };
+}
+
+function parseEncodedState(state) {
+  const decoded = Buffer.from(String(state || ''), 'base64url').toString('utf8');
+  const payload = JSON.parse(decoded);
+  if (!payload?.userId || !payload?.platform || !payload?.nonce) {
+    throw new ApiError(400, 'Invalid state');
+  }
+  return payload;
 }
 
 function parseState(state, expectedPlatform) {
-  const [userId, platform, nonce] = String(state || '').split(':');
-  if (!userId || !platform || !nonce) throw new ApiError(400, 'Invalid state');
+  let payload;
+
+  try {
+    payload = parseEncodedState(state);
+  } catch (_error) {
+    payload = parseLegacyState(state);
+  }
+
+  const { userId, platform } = payload;
   const normalized = normalizePlatform(platform);
   if (expectedPlatform && normalizePlatform(expectedPlatform) !== normalized) {
     throw new ApiError(400, 'State/platform mismatch');
   }
-  return { userId, platform: normalized };
+  return {
+    userId,
+    platform: normalized,
+    clientOrigin: sanitizeOrigin(payload.origin)
+  };
 }
 
 function getIntegrationConfig(platform) {
@@ -161,9 +207,47 @@ async function fetchLinkedInProfile(accessToken) {
   }
 }
 
+function sanitizeIntegration(integration) {
+  if (!integration) return integration;
+  const { accessToken, refreshToken, ...safeIntegration } = integration;
+  void accessToken;
+  void refreshToken;
+  return safeIntegration;
+}
+
+function summarizeIntegration(integration) {
+  const metadata = integration?.metadata || {};
+
+  if (integration?.platform === 'WORDPRESS') {
+    return {
+      siteName: metadata.siteName || null,
+      siteUrl: metadata.siteUrl || null,
+      availableSites: Array.isArray(metadata.availableSites) ? metadata.availableSites.length : 0
+    };
+  }
+
+  if (integration?.platform === 'LINKEDIN') {
+    return {
+      displayName: metadata.profile?.oidc?.name || null,
+      email: metadata.profile?.oidc?.email || null,
+      urn: metadata.urn || null
+    };
+  }
+
+  if (integration?.platform === 'INSTAGRAM') {
+    return {
+      username: metadata.username || null,
+      instagramBusinessId: metadata.instagramBusinessId || null
+    };
+  }
+
+  return {};
+}
+
 export const IntegrationService = {
   async list(userId) {
-    return prisma.platformIntegration.findMany({ where: { userId } });
+    const items = await prisma.platformIntegration.findMany({ where: { userId } });
+    return items.map(sanitizeIntegration);
   },
 
   async delete(userId, platform) {
@@ -189,9 +273,9 @@ export const IntegrationService = {
     });
   },
 
-  buildAuthUrl(userId, platform) {
+  buildAuthUrl(userId, platform, clientOrigin) {
     const normalized = normalizePlatform(platform);
-    const state = buildState(userId, normalized);
+    const state = buildState(userId, normalized, clientOrigin);
     const conf = getIntegrationConfig(normalized);
     const baseAuth =
       conf.authUrl ||
@@ -213,6 +297,8 @@ export const IntegrationService = {
   },
 
   parseState,
+  sanitizeIntegration,
+  summarizeIntegration,
 
   async handleCallback(userId, platform, payload) {
     const normalized = normalizePlatform(platform);
@@ -306,7 +392,7 @@ export const IntegrationService = {
       }
     }
 
-    return prisma.platformIntegration.upsert({
+    const integration = await prisma.platformIntegration.upsert({
       where: { userId_platform: { userId, platform: normalized } },
       update: {
         accessToken,
@@ -323,5 +409,7 @@ export const IntegrationService = {
         metadata
       }
     });
+
+    return sanitizeIntegration(integration);
   }
 };

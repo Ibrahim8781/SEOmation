@@ -26,6 +26,17 @@ type ChatMessage = {
 
 type ViewMode = 'html' | 'plain';
 
+type RequestedOutputs = {
+  instagram: boolean;
+  linkedin: boolean;
+  images: boolean;
+};
+
+type ImageAiMeta = {
+  errors?: Array<{ provider?: string; error?: string }>;
+  isPlaceholder?: boolean;
+};
+
 const languageOptions = [
   { label: 'English', value: 'EN' },
   { label: 'German', value: 'DE' }
@@ -39,6 +50,26 @@ const platformOptions: { label: string; value: IntegrationPlatform }[] = [
 
 function getTimestamp() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function isPlaceholderImage(item: ContentImageLink) {
+  const aiMeta = item.image.aiMeta as ImageAiMeta | null;
+  return item.image.provider === 'placeholder' || Boolean(aiMeta?.isPlaceholder);
+}
+
+function buildImageFailureMessage(items: ContentImageLink[]) {
+  const firstPlaceholder = items.find(isPlaceholderImage);
+  const aiMeta = (firstPlaceholder?.image.aiMeta as ImageAiMeta | null) ?? null;
+  const providerErrors = Array.isArray(aiMeta?.errors) ? aiMeta.errors : [];
+  const detail = providerErrors
+    .map((entry) => `${entry.provider || 'provider'}: ${entry.error || 'failed'}`)
+    .join(' | ');
+
+  if (detail) {
+    return `Image generation failed and only placeholders were returned. ${detail}`;
+  }
+
+  return 'Image generation failed and only placeholders were returned. Check your image provider keys and retry.';
 }
 
 export function BlogWriterPage() {
@@ -105,6 +136,11 @@ export function BlogWriterPage() {
   const [scheduledTime, setScheduledTime] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [useImages, setUseImages] = useState(false);
+  const [requestedOutputs, setRequestedOutputs] = useState<RequestedOutputs>({
+    instagram: false,
+    linkedin: false,
+    images: false
+  });
   const [activePanel, setActivePanel] = useState<'blog' | 'instagram' | 'linkedin' | 'seo' | 'images' | null>(null);
   const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const panelBodyRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -155,7 +191,15 @@ export function BlogWriterPage() {
     setImagesError(null);
     try {
       const { data } = await ContentAPI.listImages(id);
-      setGeneratedImages(data.items);
+      const items = data.items ?? [];
+      const successfulImages = items.filter((item) => !isPlaceholderImage(item));
+      const placeholderImages = items.filter(isPlaceholderImage);
+      setGeneratedImages(successfulImages);
+      if (placeholderImages.length > 0 && successfulImages.length === 0) {
+        setImagesError(buildImageFailureMessage(placeholderImages));
+      } else if (placeholderImages.length > 0) {
+        setImagesError('Some image providers failed. Showing only the images that were generated successfully.');
+      }
     } catch (err) {
       setImagesError(extractErrorMessage(err, 'Unable to load generated images.'));
     } finally {
@@ -212,6 +256,11 @@ export function BlogWriterPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsGenerating(true);
     setCopyMode('idle');
+    setRequestedOutputs({
+      instagram: includeInstagram,
+      linkedin: includeLinkedIn,
+      images: includeImage || includeLinkedInImage || includeInstagramImage
+    });
 
     const payload: GenerateContentPayload = {
       platform: 'BLOG',
@@ -587,7 +636,7 @@ export function BlogWriterPage() {
               </div>
 
               {/* Instagram */}
-              {includeInstagram && instagramCopy && (
+              {(requestedOutputs.instagram || Boolean(instagramCopy)) && (
                 <div
                   className={clsx('blog-writer-accordion__item', activePanel === 'instagram' && 'is-open')}
                   ref={(el) => {
@@ -607,6 +656,7 @@ export function BlogWriterPage() {
                       <Button
                         type="button"
                         variant="ghost"
+                        disabled={!instagramCopy}
                         onClick={async () => {
                           try {
                             if ('clipboard' in navigator) {
@@ -629,13 +679,19 @@ export function BlogWriterPage() {
                       panelBodyRefs.current.instagram = el;
                     }}
                   >
-                    <p className="blog-writer-snippet__text">{instagramCopy}</p>
+                    {instagramCopy ? (
+                      <p className="blog-writer-snippet__text">{instagramCopy}</p>
+                    ) : (
+                      <div className="blog-writer-images__placeholder">
+                        Instagram caption was requested, but no caption was returned for this run.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* LinkedIn */}
-              {includeLinkedIn && linkedinCopy && (
+              {(requestedOutputs.linkedin || Boolean(linkedinCopy)) && (
                 <div
                   className={clsx('blog-writer-accordion__item', activePanel === 'linkedin' && 'is-open')}
                   ref={(el) => {
@@ -655,6 +711,7 @@ export function BlogWriterPage() {
                       <Button
                         type="button"
                         variant="ghost"
+                        disabled={!linkedinCopy}
                         onClick={async () => {
                           try {
                             if ('clipboard' in navigator) {
@@ -677,13 +734,19 @@ export function BlogWriterPage() {
                       panelBodyRefs.current.linkedin = el;
                     }}
                   >
-                    <p className="blog-writer-snippet__text">{linkedinCopy}</p>
+                    {linkedinCopy ? (
+                      <p className="blog-writer-snippet__text">{linkedinCopy}</p>
+                    ) : (
+                      <div className="blog-writer-images__placeholder">
+                        LinkedIn post was requested, but no post was returned for this run.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Images */}
-              {(generatedImages.length > 0 || imagesLoading || imagesError) && (
+              {(requestedOutputs.images || generatedImages.length > 0 || imagesLoading || imagesError) && (
                 <div
                   className={clsx('blog-writer-accordion__item', activePanel === 'images' && 'is-open')}
                   ref={(el) => {
@@ -723,7 +786,11 @@ export function BlogWriterPage() {
                       </div>
                     )}
                     {!imagesLoading && generatedImages.length === 0 && !imagesError && (
-                      <div className="blog-writer-images__placeholder">Images will appear here when generated.</div>
+                      <div className="blog-writer-images__placeholder">
+                        {requestedOutputs.images
+                          ? 'No usable images were attached for this run. Retry after checking your image providers.'
+                          : 'Images will appear here when generated.'}
+                      </div>
                     )}
                   </div>
                 </div>

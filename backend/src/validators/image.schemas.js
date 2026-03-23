@@ -6,6 +6,7 @@ export const generateImageSchema = z.object({
   params: z.object({ id: z.string().uuid() }),
   body: z.object({
     prompt: z.string().min(3),
+    platform: z.enum(['blog', 'linkedin', 'instagram']).optional(),
     style: z.string().max(120).optional(),
     sizes: z.array(z.string()).max(5).optional(),
     count: z.number().int().min(1).max(6).optional(),

@@ -178,7 +178,7 @@ A: Yes! Includes error handling, logging, and automatic fallbacks.
 
 ```bash
 cd ai
-uvicorn main:app --reload --port 8081
+uvicorn main:app --reload --port 8001
 ```
 
 Then generate a topic to see the speed improvement!

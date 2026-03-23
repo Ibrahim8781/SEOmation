@@ -1,6 +1,7 @@
 import ApiError from '../utils/ApiError.js';
 import { prisma } from '../lib/prisma.js';
 import FastAPIService from './fastapi.service.js';
+import { AssetStorageService } from './asset-storage.service.js';
 
 async function assertOwnedContent(contentId, userId) {
   const content = await prisma.content.findUnique({ where: { id: contentId } });
@@ -42,6 +43,17 @@ function normalizeSizesForRole(role, sizes) {
   return ['1024x1024'];
 }
 
+function normalizePlatform(platform, role) {
+  const normalizedPlatform = String(platform || '').toLowerCase();
+  if (['blog', 'linkedin', 'instagram', 'wordpress'].includes(normalizedPlatform)) {
+    return normalizedPlatform === 'wordpress' ? 'blog' : normalizedPlatform;
+  }
+  if (normalizeRole(role) === 'instagram_main') {
+    return 'instagram';
+  }
+  return 'blog';
+}
+
 function normalizeUrl(image) {
   if (image.url) return image.url;
   if (image.base64) return `data:image/png;base64,${image.base64}`;
@@ -51,6 +63,24 @@ function normalizeUrl(image) {
 function safeSecondaryKeywords(value) {
   if (Array.isArray(value)) return value;
   return [];
+}
+
+async function persistStoredAsset({ userId, sourceUrl, dataUrl, aiMeta, format }) {
+  const stored = await AssetStorageService.persistImage({
+    userId,
+    sourceUrl,
+    dataUrl
+  });
+
+  return {
+    url: stored.url,
+    format: format || stored.format,
+    aiMeta: {
+      ...(aiMeta || {}),
+      storage: stored.storageMeta,
+      originalUrl: aiMeta?.originalUrl || stored.storageMeta.originalUrl || null
+    }
+  };
 }
 
 export const ImageService = {
@@ -71,21 +101,28 @@ export const ImageService = {
     }
     const url = payload.dataUrl || payload.url;
     if (!url) {
-      throw new ApiError(400, 'dataUrl is required');
+      throw new ApiError(400, 'dataUrl or url is required');
     }
 
     const altText = payload.altText || `Image for ${content.title}`;
+    const stored = await persistStoredAsset({
+      userId,
+      sourceUrl: payload.url,
+      dataUrl: payload.dataUrl,
+      aiMeta: payload.aiMeta || null,
+      format: payload.format || null
+    });
     const asset = await prisma.imageAsset.create({
       data: {
         userId,
         prompt: payload.prompt || null,
-        url,
+        url: stored.url,
         altText,
         width: payload.width || null,
         height: payload.height || null,
-        format: payload.format || null,
+        format: stored.format || null,
         provider: payload.provider || 'upload',
-        aiMeta: payload.aiMeta || null
+        aiMeta: stored.aiMeta
       }
     });
 
@@ -111,6 +148,7 @@ export const ImageService = {
     }
 
     const aiResponse = await FastAPIService.generateImages(payload.prompt, {
+      platform: normalizePlatform(payload.platform, role),
       style: payload.style || null,
       sizes: normalizeSizesForRole(role, payload.sizes),
       count: payload.count || 1,
@@ -127,24 +165,32 @@ export const ImageService = {
 
       const altText = img.altText || aiResponse.altText || payload.altText || payload.prompt;
       const meta = img.meta || {};
+      const stored = await persistStoredAsset({
+        userId,
+        sourceUrl: url,
+        aiMeta: {
+          size: img.size || payload.sizes?.[i] || null,
+          style: payload.style || null,
+          source: meta.source || img.provider || 'generate',
+          sourceDetails: meta.sourceDetails || null,
+          originalUrl: meta.sourceDetails?.originalUrl || img.url || null,
+          error: img.error || null,
+          errors: meta.errors || null,
+          isPlaceholder: img.provider === 'placeholder'
+        },
+        format: img.format || null
+      });
       const asset = await prisma.imageAsset.create({
         data: {
           userId,
           prompt: payload.prompt,
-          url,
+          url: stored.url,
           altText,
           width: img.width || null,
           height: img.height || null,
-          format: img.format || null,
+          format: stored.format || null,
           provider: img.provider || meta.source || 'ai',
-          aiMeta: {
-            size: img.size || payload.sizes?.[i] || null,
-            style: payload.style || null,
-            source: meta.source || img.provider || 'generate',
-            sourceDetails: meta.sourceDetails || null,
-            originalUrl: meta.sourceDetails?.originalUrl || img.url || null,
-            error: img.error || null
-          }
+          aiMeta: stored.aiMeta
         }
       });
 

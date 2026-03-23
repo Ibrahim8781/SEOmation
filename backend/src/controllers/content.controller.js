@@ -1,6 +1,7 @@
 import FastAPIService from '../services/fastapi.service.js';
 import { ContentService } from '../services/content.service.js';
 import { ImageService } from '../services/image.service.js';
+import { SeoService } from '../services/seo.service.js';
 import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
@@ -39,7 +40,6 @@ export const ContentController = {
       const includeImage = toBoolean(payload.includeImage, false);
       const includeLinkedInImage = toBoolean(payload.includeLinkedInImage, false);
       const includeInstagramImage = toBoolean(payload.includeInstagramImage, false);
-      const imagePrompt = payload.imagePrompt || topicTitle || focusKeyword || payload.prompt || '';
 
       const tone = payload.tone || profile?.toneOfVoice || req.user.tone || 'friendly';
       const targetLength = resolveTargetLength(payload.targetLength);
@@ -71,6 +71,9 @@ export const ContentController = {
         throw new ApiError(400, 'Either topicId or prompt must be provided');
       }
 
+      const imagePrompt = payload.imagePrompt || topicTitle || focusKeyword || prompt || '';
+      const aiResearchContext = buildAiResearchContext(userId, language, req.user, profile);
+
       const blogDraft = await FastAPIService.generateContent(
         userId,
         platform,
@@ -79,7 +82,8 @@ export const ContentController = {
         focusKeyword,
         tone,
         targetLength,
-        styleGuide
+        styleGuide,
+        aiResearchContext
       );
 
       const { structured: blogStructure, ...blogPayload } = blogDraft;
@@ -117,7 +121,8 @@ export const ContentController = {
             focusKeyword,
             tone,
             400,
-            styleGuide
+            styleGuide,
+            aiResearchContext
           )
             .then((draft) => {
               variantResults.linkedin = extractVariant(draft);
@@ -138,7 +143,8 @@ export const ContentController = {
             focusKeyword,
             tone,
             180,
-            styleGuide
+            styleGuide,
+            aiResearchContext
           )
             .then((draft) => {
               variantResults.instagram = extractVariant(draft);
@@ -194,8 +200,19 @@ export const ContentController = {
         }
       }
 
-      // Skip SEO scoring on generation; editor will score live
-      const seo = null;
+      const seoSummary = await buildSeoSummaryForContent(saved.id, saved, focusKeyword);
+      const savedWithSeo = await ContentService.updateOwned(saved.id, userId, {
+        seoSummary
+      });
+      if (savedWithSeo) {
+        Object.assign(saved, savedWithSeo);
+      }
+      const seo = {
+        score: Math.round(seoSummary.total ?? 0),
+        hints: seoSummary.components
+          .filter((component) => component.severity !== 'ok')
+          .map((component) => ({ type: component.id, msg: component.message }))
+      };
 
       res.status(HTTP.CREATED).json({
         item: saved,
@@ -342,6 +359,27 @@ function buildStyleGuide(profile) {
   return bullets;
 }
 
+function buildAiResearchContext(userId, language, user, profile) {
+  const niche = profile?.niche ?? user?.niche ?? '';
+  const normalizedLanguage = String(language || user?.language || 'EN').toLowerCase();
+  const normalizedNiche = String(niche || 'general')
+    .trim()
+    .toLowerCase();
+
+  return {
+    includeTrend: profile?.includeTrends ?? true,
+    niche,
+    seedKeywords: Array.isArray(profile?.seedKeywords) ? profile.seedKeywords : [],
+    region: profile?.primaryRegion ?? null,
+    season: profile?.seasonalFocus ?? null,
+    persona: {
+      role: profile?.targetAudience || 'content reader',
+      pains: Array.isArray(profile?.audiencePainPoints) ? profile.audiencePainPoints : []
+    },
+    namespace: `${userId}:${normalizedLanguage}:${normalizedNiche}`.toLowerCase()
+  };
+}
+
 function extractVariant(draft) {
   if (!draft) return null;
   return {
@@ -350,4 +388,22 @@ function extractVariant(draft) {
     structured: draft.structured ?? null,
     diagnostics: draft.aiMeta?.diagnostics ?? null
   };
+}
+
+async function buildSeoSummaryForContent(contentId, content, fallbackKeyword = '') {
+  const linkedImages = await prisma.contentImageLink.findMany({
+    where: { contentId },
+    include: { image: true }
+  });
+
+  return SeoService.scoreContent({
+    title: content.title || '',
+    metaDescription: content.metaDescription || '',
+    bodyHtml: content.html || content.text || '',
+    primaryKeyword: content.primaryKeyword || fallbackKeyword || '',
+    secondaryKeywords: Array.isArray(content.secondaryKeywords) ? content.secondaryKeywords : [],
+    images: linkedImages.map((link) => ({
+      altText: link.image?.altText || undefined
+    }))
+  });
 }

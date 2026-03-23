@@ -37,10 +37,20 @@ const platformRoleMap: Record<'blog' | 'linkedin' | 'instagram', string> = {
 };
 
 const roleLabel: Record<string, string> = {
-  featured: 'Blog / LinkedIn',
-  inline: 'Inline',
-  instagram_main: 'Instagram'
+  featured: 'Landscape',
+  inline: 'Flexible',
+  instagram_main: 'Square'
 };
+
+const publishImageTargets: {
+  key: 'WORDPRESS' | 'LINKEDIN' | 'INSTAGRAM';
+  label: string;
+  description: string;
+}[] = [
+  { key: 'WORDPRESS', label: 'WordPress', description: 'Blog cover / featured image' },
+  { key: 'LINKEDIN', label: 'LinkedIn', description: 'Social post image' },
+  { key: 'INSTAGRAM', label: 'Instagram', description: 'Feed image' }
+];
 
 const platformOptions: { label: string; value: IntegrationPlatform }[] = [
   { label: 'WordPress', value: 'WORDPRESS' },
@@ -56,6 +66,26 @@ function toSecondary(input: string): string[] {
     .filter(Boolean);
 }
 
+function generatedMetaDescriptionFromContent(item: ContentItem): string {
+  const structure = item.aiMeta?.contentStructure;
+  if (!structure || typeof structure !== 'object' || Array.isArray(structure)) return '';
+  const meta = (structure as { meta?: unknown }).meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return '';
+  const description = (meta as { description?: unknown }).description;
+  return typeof description === 'string' ? description : '';
+}
+
+function generatedPrimaryKeywordFromContent(item: ContentItem): string {
+  const focusKeyword = item.seoMeta?.focusKeyword;
+  return typeof focusKeyword === 'string' ? focusKeyword : '';
+}
+
+function seoImagesFromLinks(items: ContentImageLink[]) {
+  return items
+    .map((item) => ({ altText: item.image.altText ?? undefined }))
+    .filter((item) => Boolean(item.altText));
+}
+
 export function ContentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
@@ -65,11 +95,13 @@ export function ContentEditorPage() {
   const [scoring, setScoring] = useState(false);
   const [content, setContent] = useState<ContentItem | null>(null);
   const [seoSummary, setSeoSummary] = useState<SeoSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const [title, setTitle] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
   const [primaryKeyword, setPrimaryKeyword] = useState('');
   const [secondaryKeywords, setSecondaryKeywords] = useState<string[]>([]);
+  const [secondaryKeywordsInput, setSecondaryKeywordsInput] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
   const [linkedinText, setLinkedinText] = useState('');
   const [instagramText, setInstagramText] = useState('');
@@ -97,25 +129,41 @@ export function ContentEditorPage() {
   const load = async () => {
     if (!id) return;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
+    setErrorMessage('');
     try {
       const { data } = await ContentAPI.getById(id);
       setContent(data);
       setTitle(data.title ?? '');
-      setMetaDescription((data as any).metaDescription ?? '');
-      setPrimaryKeyword((data as any).primaryKeyword ?? '');
-      setSecondaryKeywords((data as any).secondaryKeywords ?? []);
+      setMetaDescription(data.metaDescription ?? generatedMetaDescriptionFromContent(data) ?? '');
+      setPrimaryKeyword(data.primaryKeyword ?? generatedPrimaryKeywordFromContent(data) ?? '');
+      const loadedSecondaryKeywords = data.secondaryKeywords ?? [];
+      setSecondaryKeywords(loadedSecondaryKeywords);
+      setSecondaryKeywordsInput(loadedSecondaryKeywords.join(', '));
       setBodyHtml(data.html ?? data.text ?? '');
-      setSeoSummary((data as any).seoSummary ?? null);
+      setSeoSummary(data.seoSummary ?? null);
       setImagePrompt(data.title ?? '');
-      const social = (data.aiMeta as any)?.social || {};
+      const social = data.aiMeta?.social ?? {};
       setLinkedinText(social.linkedin?.text || '');
       setInstagramText(social.instagram?.text || '');
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to load this draft.'));
+      setLoadError(extractErrorMessage(err, 'Unable to load this draft.'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const syncSelectedImages = (items: ContentImageLink[]) => {
+    const featured = items.find((item) => item.role === 'featured') ?? items[0] ?? null;
+    const instagram = items.find((item) => item.role === 'instagram_main') ?? items[0] ?? null;
+
+    const hasWordpressSelection = items.some((item) => item.id === selectedWordpressImage);
+    const hasLinkedinSelection = items.some((item) => item.id === selectedLinkedinImage);
+    const hasInstagramSelection = items.some((item) => item.id === selectedInstagramImage);
+
+    setSelectedWordpressImage(hasWordpressSelection ? selectedWordpressImage : featured?.id || '');
+    setSelectedLinkedinImage(hasLinkedinSelection ? selectedLinkedinImage : featured?.id || '');
+    setSelectedInstagramImage(hasInstagramSelection ? selectedInstagramImage : instagram?.id || '');
   };
 
   const loadImages = async () => {
@@ -123,11 +171,7 @@ export function ContentEditorPage() {
     try {
       const { data } = await ContentAPI.listImages(id);
       setImages(data.items);
-      // Try to keep selections
-      if (!selectedInstagramImage && data.items.length) {
-        const insta = data.items.find((i) => i.role === 'instagram_main');
-        if (insta) setSelectedInstagramImage(insta.id);
-      }
+      syncSelectedImages(data.items);
     } catch {
       /* ignore */
     }
@@ -185,7 +229,8 @@ export function ContentEditorPage() {
           metaDescription,
           bodyHtml,
           primaryKeyword,
-          secondaryKeywords
+          secondaryKeywords,
+          images: seoImagesFromLinks(images)
         });
         setSeoSummary(data);
       } catch {
@@ -199,12 +244,13 @@ export function ContentEditorPage() {
         window.clearTimeout(scoreTimer.current);
       }
     };
-  }, [title, metaDescription, bodyHtml, primaryKeyword, secondaryKeywords]);
+  }, [title, metaDescription, bodyHtml, primaryKeyword, secondaryKeywords, images]);
 
   const handleSave = async () => {
     if (!id) return;
     setSaving(true);
     setStatusMessage('');
+    setErrorMessage('');
     try {
       const { data } = await ContentAPI.saveDraftWithSeo(id, {
         title,
@@ -212,6 +258,7 @@ export function ContentEditorPage() {
         bodyHtml,
         primaryKeyword,
         secondaryKeywords,
+        images: seoImagesFromLinks(images),
         linkedinText,
         instagramText
       });
@@ -219,7 +266,7 @@ export function ContentEditorPage() {
       setSeoSummary(data.seo);
       setStatusMessage(`Saved with SEO score ${Math.round(data.seo.total)}`);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to save this draft.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to save this draft.'));
     } finally {
       setSaving(false);
     }
@@ -228,9 +275,11 @@ export function ContentEditorPage() {
   const handleGenerateImages = async () => {
     if (!id || !imagePrompt.trim()) return;
     setImageLoading(true);
+    setErrorMessage('');
     try {
       const payload: GenerateImagePayload = {
         prompt: imagePrompt,
+        platform: imagePlatform,
         count: imageCount,
         role: imageRole,
         altText: imageAlt
@@ -239,7 +288,7 @@ export function ContentEditorPage() {
       await loadImages();
       setStatusMessage('Images generated and attached.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to generate images right now.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to generate images right now.'));
     } finally {
       setImageLoading(false);
     }
@@ -248,6 +297,7 @@ export function ContentEditorPage() {
   const handleUploadImage = async (file?: File | null) => {
     if (!id || !file) return;
     setImageLoading(true);
+    setErrorMessage('');
     try {
       const dataUrl = await fileToDataUrl(file);
       await ContentAPI.uploadImage(id, {
@@ -259,7 +309,7 @@ export function ContentEditorPage() {
       await loadImages();
       setStatusMessage('Image uploaded and attached.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to upload image.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to upload image.'));
     } finally {
       setImageLoading(false);
     }
@@ -268,14 +318,12 @@ export function ContentEditorPage() {
   const handleDeleteImage = async (linkId: string) => {
     if (!id) return;
     setImageLoading(true);
+    setErrorMessage('');
     try {
       await ContentAPI.deleteImageLink(id, linkId);
       await loadImages();
-      if (selectedInstagramImage === linkId) setSelectedInstagramImage('');
-      if (selectedLinkedinImage === linkId) setSelectedLinkedinImage('');
-      if (selectedWordpressImage === linkId) setSelectedWordpressImage('');
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to delete image.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to delete image.'));
     } finally {
       setImageLoading(false);
     }
@@ -283,8 +331,9 @@ export function ContentEditorPage() {
 
   const handlePublishNow = async () => {
     if (!id || !selectedIntegrationId) return;
+    setErrorMessage('');
     if (selectedPlatform === 'INSTAGRAM' && !selectedInstagramImage) {
-      setError('Instagram requires selecting an image.');
+      setErrorMessage('Instagram requires selecting an image.');
       return;
     }
     try {
@@ -302,19 +351,20 @@ export function ContentEditorPage() {
       setPublishModalOpen(false);
       setJobs((prev) => [data.job, ...prev]);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to publish now.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to publish now.'));
     }
   };
 
   const handleSchedule = async () => {
     if (!id || !selectedIntegrationId || !scheduledTime) return;
+    setErrorMessage('');
     if (selectedPlatform === 'INSTAGRAM' && !selectedInstagramImage) {
-      setError('Instagram requires selecting an image.');
+      setErrorMessage('Instagram requires selecting an image.');
       return;
     }
     const picked = dayjs(scheduledTime);
     if (!picked.isValid() || picked.isBefore(dayjs())) {
-      setError('Pick a future time for scheduling.');
+      setErrorMessage('Pick a future time for scheduling.');
       return;
     }
     try {
@@ -333,12 +383,39 @@ export function ContentEditorPage() {
       setPublishModalOpen(false);
       setJobs((prev) => [data.job, ...prev]);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Unable to schedule this content.'));
+      setErrorMessage(extractErrorMessage(err, 'Unable to schedule this content.'));
     }
   };
 
   const seoComponents = seoSummary?.components ?? [];
   const latestJob = useMemo(() => jobs.find((job) => job.contentId === id), [jobs, id]);
+  const selectedImagesByPlatform = useMemo(
+    () => ({
+      WORDPRESS: images.find((item) => item.id === selectedWordpressImage) ?? null,
+      LINKEDIN: images.find((item) => item.id === selectedLinkedinImage) ?? null,
+      INSTAGRAM: images.find((item) => item.id === selectedInstagramImage) ?? null
+    }),
+    [images, selectedInstagramImage, selectedLinkedinImage, selectedWordpressImage]
+  );
+
+  const assignImageToPlatform = (platform: 'WORDPRESS' | 'LINKEDIN' | 'INSTAGRAM', imageId: string) => {
+    if (platform === 'WORDPRESS') {
+      setSelectedWordpressImage(imageId);
+      return;
+    }
+    if (platform === 'LINKEDIN') {
+      setSelectedLinkedinImage(imageId);
+      return;
+    }
+    setSelectedInstagramImage(imageId);
+  };
+
+  const imageAssignmentsForCard = (imageId: string) =>
+    publishImageTargets.filter((target) => {
+      if (target.key === 'WORDPRESS') return selectedWordpressImage === imageId;
+      if (target.key === 'LINKEDIN') return selectedLinkedinImage === imageId;
+      return selectedInstagramImage === imageId;
+    });
 
   if (loading) {
     return (
@@ -351,10 +428,10 @@ export function ContentEditorPage() {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="content-editor-page">
-        <div className="content-editor-error glass-card">{error}</div>
+        <div className="content-editor-error glass-card">{loadError}</div>
         <Button variant="ghost" onClick={() => navigate(-1)}>
           Go back
         </Button>
@@ -383,6 +460,7 @@ export function ContentEditorPage() {
       </header>
 
       {statusMessage && <div className="content-editor-banner glass-card">{statusMessage}</div>}
+      {errorMessage && <div className="content-editor-error glass-card">{errorMessage}</div>}
 
       <div className="content-editor-grid">
         <section className="content-editor-main glass-card">
@@ -408,8 +486,12 @@ export function ContentEditorPage() {
           />
           <Input
             label="Secondary keywords (comma separated)"
-            value={secondaryKeywords.join(', ')}
-            onChange={(e) => setSecondaryKeywords(toSecondary(e.target.value))}
+            value={secondaryKeywordsInput}
+            onChange={(e) => {
+              const rawValue = e.target.value;
+              setSecondaryKeywordsInput(rawValue);
+              setSecondaryKeywords(toSecondary(rawValue));
+            }}
           />
           <div className="form-grid">
             <Textarea
@@ -499,11 +581,11 @@ export function ContentEditorPage() {
                     />
                     <div className="form-grid">
                       <Select
-                        label="Platform"
+                        label="Generate for"
                         value={imagePlatform}
                         onChange={(e) => setImagePlatform(e.target.value as 'blog' | 'linkedin' | 'instagram')}
                         options={[
-                          { label: 'Blog / WordPress', value: 'blog' },
+                          { label: 'WordPress', value: 'blog' },
                           { label: 'LinkedIn', value: 'linkedin' },
                           { label: 'Instagram', value: 'instagram' }
                         ]}
@@ -544,41 +626,67 @@ export function ContentEditorPage() {
                       <span>Upload image</span>
                     </label>
                   </div>
+                  {images.length > 0 && (
+                    <div className="image-assignment-list">
+                      {publishImageTargets.map((target) => {
+                        const selectedImage = selectedImagesByPlatform[target.key];
+                        return (
+                          <div key={target.key} className="image-assignment-row glass-card">
+                            <div className="image-assignment-row__meta">
+                              <p>{target.label}</p>
+                              <strong>{selectedImage ? selectedImage.image.altText || 'Selected image' : 'No image selected'}</strong>
+                              <span>{selectedImage ? target.description : `Choose an image for ${target.label}`}</span>
+                            </div>
+                            {selectedImage && (
+                              <img
+                                src={selectedImage.image.url}
+                                alt={selectedImage.image.altText ?? `${target.label} selection`}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="images-grid">
                     {images.map((item) => (
                       <figure key={item.id} className="image-card glass-card">
                         <img src={item.image.url} alt={item.image.altText ?? 'content image'} />
                         <figcaption>
-                          <span className="image-role">{roleLabel[item.role] || item.role}</span>
-                          <p>{item.image.altText || 'No alt text'}</p>
+                          <div className="image-card__meta">
+                            <span className="image-role">{roleLabel[item.role] || 'Image'}</span>
+                            {imageAssignmentsForCard(item.id).length > 0 && (
+                              <div className="image-card__badges">
+                                {imageAssignmentsForCard(item.id).map((target) => (
+                                  <span key={target.key} className="image-card__badge">
+                                    {target.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <p className="image-card__title">{item.image.altText || 'No alt text'}</p>
+                          {imageAssignmentsForCard(item.id).length > 0 && (
+                            <p className="image-card__hint">Selected for {imageAssignmentsForCard(item.id).map((target) => target.label).join(', ')}</p>
+                          )}
                           <div className="image-selectors">
-                            <label>
-                              <input
-                                type="radio"
-                                name="insta-image"
-                                checked={selectedInstagramImage === item.id}
-                                onChange={() => setSelectedInstagramImage(item.id)}
-                              />
-                              Instagram
-                            </label>
-                            <label>
-                              <input
-                                type="radio"
-                                name="linkedin-image"
-                                checked={selectedLinkedinImage === item.id}
-                                onChange={() => setSelectedLinkedinImage(item.id)}
-                              />
-                              LinkedIn
-                            </label>
-                            <label>
-                              <input
-                                type="radio"
-                                name="wp-image"
-                                checked={selectedWordpressImage === item.id}
-                                onChange={() => setSelectedWordpressImage(item.id)}
-                              />
-                              Featured
-                            </label>
+                            {publishImageTargets.map((target) => {
+                              const isSelected =
+                                (target.key === 'WORDPRESS' && selectedWordpressImage === item.id) ||
+                                (target.key === 'LINKEDIN' && selectedLinkedinImage === item.id) ||
+                                (target.key === 'INSTAGRAM' && selectedInstagramImage === item.id);
+
+                              return (
+                                <button
+                                  key={target.key}
+                                  type="button"
+                                  className={`image-choice-button ${isSelected ? 'is-selected' : ''}`}
+                                  onClick={() => assignImageToPlatform(target.key, item.id)}
+                                >
+                                  <span>{target.label}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                           <Button
                             variant="ghost"

@@ -172,8 +172,6 @@ export interface PlatformIntegration {
   id: string;
   userId: string;
   platform: IntegrationPlatform;
-  accessToken: string;
-  refreshToken?: string | null;
   expiresAt?: string | null;
   metadata?: Record<string, unknown> | null;
   createdAt: string;

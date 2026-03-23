@@ -76,6 +76,8 @@ export const TopicController = {
                 pains: resolvedPains,
                 region: baseContext.region ?? profile?.primaryRegion ?? null,
                 season: baseContext.season ?? profile?.seasonalFocus ?? null,
+                contentGoals: baseContext.contentGoals ?? profile?.contentGoals ?? null,
+                preferredContentTypes: baseContext.preferredContentTypes ?? profile?.preferredContentTypes ?? [],
                 includeTrends,
                 count: resolvedCount
             };

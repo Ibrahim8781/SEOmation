@@ -20,12 +20,16 @@
 .integration-card {
   padding: 16px;
   border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .integration-card__header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .integration-card__header h3 {
@@ -37,17 +41,55 @@
   color: var(--color-muted);
 }
 
+.integration-card__connected {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.integration-card__badge {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(82, 196, 26, 0.12);
+  color: #1d5f2d;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.integration-card__connected strong {
+  font-size: 1rem;
+  line-height: 1.4;
+  color: #1f243a;
+}
+
 .integration-card__meta {
-  margin: 8px 0;
   color: var(--color-muted);
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   font-size: 13px;
+}
+
+.integration-card__meta span {
+  display: block;
+  line-height: 1.45;
+}
+
+.integration-card__empty {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .integration-card__actions {
   display: flex;
   gap: 10px;
+  margin-top: auto;
 }
 
 .integrations-error {
@@ -63,4 +105,12 @@
   border: 1px solid rgba(82, 196, 26, 0.35);
   background: rgba(82, 196, 26, 0.08);
   color: #1b4d2b;
+}
+
+@media (max-width: 720px) {
+  .integrations-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
 }

@@ -1,344 +1,3 @@
-# # ai/services/live_search_service.py - NEW FILE
-
-# """
-# Live Search & RAG Service
-# Performs real-time search, scraping, and keyword extraction without permanent storage.
-# """
-
-# import asyncio
-# import logging
-# from typing import List, Dict
-# from collections import Counter
-# import re
-
-# logger = logging.getLogger(__name__)
-
-
-# def expand_keywords(seed_keywords: List[str]) -> List[str]:
-#     """
-#     Expand user keywords into Google-style search queries.
-    
-#     Example:
-#         Input: ["cooking", "homecook", "basics"]
-#         Output: [
-#             "cooking homecook basics fundamentals",
-#             "cooking homecook basics 101",
-#             "cooking homecook basics guide",
-#             "home cooking basics tutorial"
-#         ]
-#     """
-#     if not seed_keywords:
-#         return []
-    
-#     # Clean and combine keywords
-#     cleaned = [kw.strip().lower() for kw in seed_keywords if kw.strip()]
-    
-#     if not cleaned:
-#         return []
-    
-#     # Limit to 3 keywords to avoid overly long queries
-#     base_keywords = " ".join(cleaned[:3])
-    
-#     # Search query templates
-#     templates = [
-#         "{} fundamentals",
-#         "{} 101",
-#         "{} basics guide",
-#         "{} tutorial",
-#         "how to {}",
-#         "{} tips"
-#     ]
-    
-#     # Generate queries (limit to 4 for speed)
-#     queries = []
-#     for template in templates[:4]:
-#         query = template.format(base_keywords)
-#         queries.append(query)
-    
-#     logger.info("expand_keywords", extra={"seed": seed_keywords, "expanded": len(queries)})
-#     return queries
-
-
-# async def search_and_scrape(queries: List[str], max_urls: int = 5) -> List[Dict]:
-#     """
-#     Search DuckDuckGo and scrape top results in parallel.
-    
-#     Returns:
-#         List[Dict]: [
-#             {"url": "...", "content": "...", "title": "..."},
-#             ...
-#         ]
-#     """
-#     try:
-#         from ddgs import DDGS
-#     except ImportError:
-#         logger.error("duckduckgo-search not installed. Run: pip install duckduckgo-search")
-#         return []
-    
-#     all_urls = []
-    
-#     # OPTIMIZATION: Use DuckDuckGo (unlimited + fast)
-#     logger.info("search_ddg", extra={"queries": len(queries)})
-    
-#     try:
-#         with DDGS() as ddgs:
-#             for query in queries[:3]:  # Limit to 3 queries for speed
-#                 try:
-#                     results = ddgs.text(
-#                         query, 
-#                         max_results=max_urls,
-#                         region='wt-wt',  # Worldwide
-#                         safesearch='moderate'
-#                     )
-                    
-#                     for result in results:
-#                         all_urls.append({
-#                             "url": result.get("href", ""),
-#                             "title": result.get("title", ""),
-#                             "snippet": result.get("body", "")[:500]
-#                         })
-                        
-#                 except Exception as e:
-#                     logger.warning(f"DDG search failed for query '{query}': {e}")
-#                     continue
-                    
-#     except Exception as e:
-#         logger.error(f"DDG search error: {e}")
-#         return []
-    
-#     # Remove duplicates (keep first occurrence)
-#     seen_urls = set()
-#     unique_results = []
-#     for item in all_urls:
-#         if item["url"] not in seen_urls and item["url"]:
-#             seen_urls.add(item["url"])
-#             unique_results.append(item)
-    
-#     # Limit to top 10 unique URLs
-#     unique_results = unique_results[:10]
-    
-#     if not unique_results:
-#         logger.warning("No search results found")
-#         return []
-    
-#     logger.info("search_results", extra={"unique_urls": len(unique_results)})
-    
-#     # OPTIMIZATION: Parallel scraping
-#     from services.scraper_service import fetch_multiple_urls_parallel
-    
-#     urls_to_scrape = [item["url"] for item in unique_results]
-#     htmls = await fetch_multiple_urls_parallel(urls_to_scrape, max_concurrent=5)
-    
-#     scraped_data = []
-    
-#     for i, html in enumerate(htmls):
-#         if not html or len(html) < 200:
-#             # Fallback to snippet if scraping failed
-#             if unique_results[i]["snippet"]:
-#                 scraped_data.append({
-#                     "url": unique_results[i]["url"],
-#                     "content": unique_results[i]["snippet"],
-#                     "title": unique_results[i]["title"]
-#                 })
-#             continue
-        
-#         # Extract main content
-#         try:
-#             from bs4 import BeautifulSoup
-            
-#             soup = BeautifulSoup(html, "html.parser")
-            
-#             # Remove noise
-#             for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
-#                 tag.extract()
-            
-#             # Get text from main content areas
-#             content_tags = soup.find_all(["p", "li", "h2", "h3", "article", "section"])
-#             content = " ".join([
-#                 tag.get_text(" ", strip=True) 
-#                 for tag in content_tags
-#             ])[:5000]  # Limit to 5000 chars per page
-            
-#             if len(content) > 200:  # Minimum viable content
-#                 scraped_data.append({
-#                     "url": unique_results[i]["url"],
-#                     "content": content,
-#                     "title": soup.title.string if soup.title else unique_results[i]["title"]
-#                 })
-                
-#         except Exception as e:
-#             logger.warning(f"Failed to parse HTML from {unique_results[i]['url']}: {e}")
-#             continue
-    
-#     logger.info("scrape_complete", extra={"scraped": len(scraped_data), "total": len(unique_results)})
-    
-#     return scraped_data
-
-
-# async def extract_keywords_rag(scraped_data: List[Dict], top_n: int = 20) -> Dict:
-#     """
-#     Use RAG to extract most relevant keywords from scraped content.
-#     NO PERMANENT STORAGE - just in-memory processing.
-    
-#     Returns:
-#         {
-#             "keywords": ["cooking technique", "home chef", ...],
-#             "themes": ["basics", "fundamentals", ...]
-#         }
-#     """
-#     if not scraped_data:
-#         logger.warning("No data to extract keywords from")
-#         return {"keywords": [], "themes": []}
-    
-#     # Combine all content
-#     all_texts = [item["content"] for item in scraped_data]
-    
-#     # Extract sentences (better for keyword extraction)
-#     sentences = []
-#     for text in all_texts:
-#         # Split by period, limit per document
-#         doc_sentences = [s.strip() for s in text.split(". ") if len(s.strip()) > 20]
-#         sentences.extend(doc_sentences[:20])  # Max 20 sentences per doc
-    
-#     if len(sentences) < 5:
-#         # Too few sentences, fallback to simple extraction
-#         keywords = extract_noun_phrases(" ".join(all_texts))
-#         return {
-#             "keywords": list(set(keywords))[:top_n],
-#             "themes": []
-#         }
-    
-#     logger.info("rag_embed", extra={"sentences": len(sentences)})
-    
-#     # OPTIMIZATION: Batch embed
-#     try:
-#         from services.embedding_service import embed_texts
-#         embeddings = embed_texts(sentences)
-#     except Exception as e:
-#         logger.error(f"Embedding failed: {e}")
-#         # Fallback to regex extraction
-#         keywords = extract_noun_phrases(" ".join(all_texts))
-#         return {
-#             "keywords": list(set(keywords))[:top_n],
-#             "themes": []
-#         }
-    
-#     # Find semantic clusters using K-means
-#     try:
-#         from sklearn.cluster import KMeans
-#         import numpy as np
-        
-#         n_clusters = min(5, max(2, len(sentences) // 10))  # 2-5 clusters
-        
-#         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-#         clusters = kmeans.fit_predict(embeddings)
-        
-#         logger.info("rag_cluster", extra={"clusters": n_clusters})
-        
-#         # Extract representative keywords from each cluster
-#         keywords = []
-#         themes = []
-        
-#         for cluster_id in range(n_clusters):
-#             cluster_sentences = [
-#                 sentences[i] for i in range(len(sentences)) 
-#                 if clusters[i] == cluster_id
-#             ]
-            
-#             if not cluster_sentences:
-#                 continue
-            
-#             # Get most common noun phrases from this cluster
-#             cluster_text = " ".join(cluster_sentences[:5])  # Top 5 sentences
-#             phrases = extract_noun_phrases(cluster_text)
-            
-#             # Add top phrases from this cluster
-#             keywords.extend(phrases[:4])  # Top 4 per cluster
-#             themes.append(f"theme_{cluster_id}")
-        
-#         # Deduplicate and limit
-#         unique_keywords = list(dict.fromkeys(keywords))[:top_n]
-        
-#         logger.info("rag_complete", extra={"keywords": len(unique_keywords), "themes": len(themes)})
-        
-#         return {
-#             "keywords": unique_keywords,
-#             "themes": themes
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Clustering failed: {e}")
-#         # Fallback to simple extraction
-#         keywords = extract_noun_phrases(" ".join(all_texts))
-#         return {
-#             "keywords": list(set(keywords))[:top_n],
-#             "themes": []
-#         }
-
-
-# def extract_noun_phrases(text: str, top_n: int = 30) -> List[str]:
-#     """
-#     Simple noun phrase extraction using regex patterns.
-#     No heavy NLP libraries needed.
-#     """
-#     if not text:
-#         return []
-    
-#     text = text.lower()
-    
-#     # Pattern 1: Capitalized words (usually important nouns)
-#     # Pattern 2: Common noun phrase patterns
-#     patterns = [
-#         r'\b[a-z]+(?:\s+[a-z]+){1,2}\b',  # 2-3 word phrases
-#     ]
-    
-#     phrases = []
-#     for pattern in patterns:
-#         matches = re.findall(pattern, text)
-#         phrases.extend(matches)
-    
-#     # Filter out common stopwords and short phrases
-#     stopwords = {
-#         'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 
-#         'will', 'can', 'are', 'was', 'were', 'been', 'has', 'had'
-#     }
-    
-#     filtered_phrases = []
-#     for phrase in phrases:
-#         words = phrase.split()
-#         # Keep if no stopwords and length is good
-#         if (len(phrase) >= 8 and len(phrase) <= 40 and 
-#             not any(word in stopwords for word in words)):
-#             filtered_phrases.append(phrase)
-    
-#     # Return most frequent
-#     phrase_counts = Counter(filtered_phrases)
-#     return [phrase for phrase, _ in phrase_counts.most_common(top_n)]
-
-
-# def build_llm_context(scraped_data: List[Dict], keywords: List[str]) -> str:
-#     """
-#     Format scraped content + keywords for LLM consumption.
-#     """
-#     if not scraped_data and not keywords:
-#         return ""
-    
-#     context_parts = [
-#         "=== TRENDING TOPICS & KEYWORDS ===",
-#         ", ".join(keywords[:15]) if keywords else "No keywords extracted",
-#         "",
-#         "=== TOP CONTENT REFERENCES ===",
-#     ]
-    
-#     for i, item in enumerate(scraped_data[:5], 1):  # Top 5 sources
-#         context_parts.append(f"{i}. {item['title']}")
-#         context_parts.append(f"   {item['content'][:300]}...")
-#         context_parts.append("")
-    
-#     return "\n".join(context_parts)
-
-# ai/services/live_search_service.py - UPDATED WITH BETTER TIMEOUT HANDLING
-
 """
 Live search and RAG service for keyword extraction and content research.
 Uses DuckDuckGo for unlimited searches and temporary RAG for keyword extraction.
@@ -347,11 +6,12 @@ Uses DuckDuckGo for unlimited searches and temporary RAG for keyword extraction.
 import asyncio
 import httpx
 import logging
-from typing import List, Dict
+from typing import List, Dict, Set
 from bs4 import BeautifulSoup
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
+from urllib.parse import urlparse
 
 # Import ddgs conditionally (not always needed)
 try:
@@ -365,7 +25,200 @@ logger = logging.getLogger(__name__)
 # Timeout settings
 SEARCH_TIMEOUT = 10  # seconds per search
 SCRAPE_TIMEOUT = 8   # seconds per URL
-MAX_RETRIES = 2
+SCRAPE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+}
+
+DISCOURAGED_SOURCE_DOMAINS = {
+    "dispatchpressimages.com",
+    "facebook.com",
+    "grokipedia.com",
+    "instagram.com",
+    "linkedin.com",
+    "msn.com",
+    "newsnow.co.uk",
+    "newsnow.com",
+    "pinterest.com",
+    "reddit.com",
+    "tiktok.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+}
+
+LOW_PRIORITY_REFERENCE_DOMAINS = {
+    "wikipedia.org",
+}
+
+LOW_SIGNAL_URL_PATTERNS = (
+    "/tag/",
+    "/tags/",
+    "/topic/",
+    "/topics/",
+    "/category/",
+    "/categories/",
+    "/search",
+    "/rss",
+)
+
+QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "latest",
+    "news",
+    "of",
+    "on",
+    "or",
+    "the",
+    "this",
+    "to",
+    "today",
+    "vs",
+    "what",
+    "when",
+    "with",
+}
+
+SIGNAL_TERMS = {
+    "analysis",
+    "guide",
+    "preview",
+    "price",
+    "pricing",
+    "result",
+    "results",
+    "review",
+    "schedule",
+    "stats",
+}
+
+
+def _base_domain(url: str) -> str:
+    try:
+        domain = (urlparse(url).netloc or "").lower()
+    except Exception:
+        return ""
+    return domain[4:] if domain.startswith("www.") else domain
+
+
+def _matches_domain(domain: str, candidates: Set[str]) -> bool:
+    return any(domain == candidate or domain.endswith(f".{candidate}") for candidate in candidates)
+
+
+def _tokenize_text(text: str) -> Set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.lower())
+        if len(token) >= 3 and token not in QUERY_STOPWORDS
+    }
+
+
+def _count_signal_terms(tokens: Set[str]) -> int:
+    return len(tokens & SIGNAL_TERMS)
+
+
+def _score_search_result(item: Dict, query: str, query_index: int) -> float:
+    domain = _base_domain(item.get("url", ""))
+    title = str(item.get("title", "")).lower()
+    snippet = str(item.get("snippet", "")).strip()
+    path = urlparse(item.get("url", "")).path.lower()
+    query_tokens = _tokenize_text(query)
+    title_tokens = _tokenize_text(title)
+    snippet_tokens = _tokenize_text(snippet)
+    path_tokens = _tokenize_text(path.replace("/", " "))
+    score = max(0, 3 - query_index)
+
+    if _matches_domain(domain, DISCOURAGED_SOURCE_DOMAINS):
+        score -= 8
+    if _matches_domain(domain, LOW_PRIORITY_REFERENCE_DOMAINS):
+        score -= 2
+    if any(pattern in path for pattern in LOW_SIGNAL_URL_PATTERNS):
+        score -= 2
+
+    if query_tokens:
+        title_overlap = len(query_tokens & title_tokens)
+        snippet_overlap = len(query_tokens & snippet_tokens)
+        path_overlap = len(query_tokens & path_tokens)
+        score += (title_overlap * 2.0) + (snippet_overlap * 0.75) + (path_overlap * 0.5)
+
+        if title_overlap == 0 and snippet_overlap == 0:
+            score -= 2
+
+        # Reward results whose wording matches the query intent.
+        query_signal_terms = _count_signal_terms(query_tokens)
+        if query_signal_terms:
+            signal_hits = _count_signal_terms(title_tokens | snippet_tokens)
+            score += min(query_signal_terms, signal_hits) * 0.75
+
+    if len(snippet) >= 120:
+        score += 1.5
+    elif len(snippet) >= 60:
+        score += 0.5
+    else:
+        score -= 1
+
+    return score
+
+
+def _rank_search_results(results: List[Dict], max_urls: int) -> List[Dict]:
+    if not results:
+        return []
+
+    scored = sorted(
+        results,
+        key=lambda item: (
+            -float(item.get("_rankScore", 0.0)),
+            int(item.get("_queryOrder", 99)),
+            item.get("url", ""),
+        ),
+    )
+
+    selected: List[Dict] = []
+    seen_urls = set()
+    seen_domains = set()
+
+    for item in scored:
+        url = item.get("url", "")
+        domain = _base_domain(url)
+        if not url or url in seen_urls:
+            continue
+        if domain and domain in seen_domains:
+            continue
+        seen_urls.add(url)
+        if domain:
+            seen_domains.add(domain)
+        selected.append(item)
+        if len(selected) >= max_urls:
+            return selected
+
+    for item in scored:
+        url = item.get("url", "")
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        selected.append(item)
+        if len(selected) >= max_urls:
+            break
+
+    return selected
 
 
 def expand_keywords(keywords: List[str]) -> List[str]:
@@ -452,11 +305,15 @@ async def scrape_url(url: str, session: httpx.AsyncClient) -> Dict:
         response = await session.get(
             url,
             timeout=SCRAPE_TIMEOUT,
-            follow_redirects=True
+            follow_redirects=True,
+            headers=SCRAPE_HEADERS,
         )
         
         if response.status_code != 200:
-            logger.warning(f"scrape_url: Got status {response.status_code} for {url}")
+            if response.status_code in {401, 403, 429}:
+                logger.info(f"scrape_url: Direct scraping blocked with status {response.status_code} for {url}")
+            else:
+                logger.warning(f"scrape_url: Got status {response.status_code} for {url}")
             return None
         
         # Parse HTML
@@ -488,7 +345,11 @@ async def scrape_url(url: str, session: httpx.AsyncClient) -> Dict:
         # Clean and truncate
         content = ' '.join(content.split())  # Normalize whitespace
         content = content[:5000]  # Limit to 5000 chars
-        
+
+        if len(content) < 200:
+            logger.info(f"scrape_url: Insufficient extracted content for {url} ({len(content)} chars)")
+            return None
+
         logger.info(f"scrape_url: Successfully scraped {url} ({len(content)} chars)")
         
         return {
@@ -507,6 +368,19 @@ async def scrape_url(url: str, session: httpx.AsyncClient) -> Dict:
     return None
 
 
+def _build_snippet_fallback(item: Dict) -> Dict | None:
+    snippet = " ".join(str(item.get("snippet", "")).split()).strip()
+    if not snippet:
+        return None
+
+    return {
+        "url": item.get("url", ""),
+        "title": item.get("title") or item.get("url") or "Search result",
+        "content": snippet[:1000],
+        "snippetOnly": True,
+    }
+
+
 async def search_and_scrape(queries: List[str], max_urls: int = 10) -> List[Dict]:
     """
     Search multiple queries and scrape top results in parallel.
@@ -522,24 +396,35 @@ async def search_and_scrape(queries: List[str], max_urls: int = 10) -> List[Dict
     
     # Step 1: Search all queries
     all_urls = []
-    
-    for query in queries[:3]:  # Limit to 3 queries to avoid rate limits
+    seen_urls = set()
+
+    for query_index, query in enumerate(queries[:3]):  # Limit to 3 queries to avoid rate limits
         results = await search_ddg(query, max_results=5)
         for r in results:
-            if r["url"] not in [u["url"] for u in all_urls]:
-                all_urls.append(r)
+            url = r.get("url", "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            r["_queryOrder"] = query_index
+            r["_rankScore"] = _score_search_result(r, query, query_index)
+            all_urls.append(r)
     
     if not all_urls:
         logger.warning("search_and_scrape: No search results found")
         return []
     
-    # Limit URLs
-    all_urls = all_urls[:max_urls]
+    # Rank URLs before scraping so stronger sources win first.
+    all_urls = _rank_search_results(all_urls, max_urls=max_urls)
     
-    logger.info(f"search_and_scrape: Scraping {len(all_urls)} unique URLs")
+    logger.info(
+        "search_and_scrape: Scraping %s ranked URLs domains=%s",
+        len(all_urls),
+        [ _base_domain(item.get("url", "")) for item in all_urls ],
+    )
     
     # Step 2: Scrape URLs in parallel (5 concurrent)
     scraped = []
+    snippet_fallbacks = 0
     
     async with httpx.AsyncClient() as session:
         # Process in batches of 5
@@ -549,11 +434,21 @@ async def search_and_scrape(queries: List[str], max_urls: int = 10) -> List[Dict
             tasks = [scrape_url(item["url"], session) for item in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            for result in results:
+            for item, result in zip(batch, results):
                 if isinstance(result, dict) and result:
                     scraped.append(result)
+                    continue
+
+                snippet_doc = _build_snippet_fallback(item)
+                if snippet_doc:
+                    snippet_fallbacks += 1
+                    scraped.append(snippet_doc)
+                    logger.info(f"search_and_scrape: Using snippet fallback for {item['url']}")
     
-    logger.info(f"search_and_scrape: Successfully scraped {len(scraped)}/{len(all_urls)} URLs")
+    logger.info(
+        f"search_and_scrape: Prepared {len(scraped)} usable sources from {len(all_urls)} URLs "
+        f"({snippet_fallbacks} snippet fallbacks)"
+    )
     
     return scraped
 
