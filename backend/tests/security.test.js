@@ -223,7 +223,7 @@ describe('Security Tests', () => {
       }
     });
 
-    it('prevents user from accessing another user\'s content', async () => {
+    it("prevents user from accessing another user's content", async () => {
       if (!ownContentId) return; // skip if setup failed
       const res = await request(app)
         .get(`/api/content/${ownContentId}`)
@@ -232,18 +232,23 @@ describe('Security Tests', () => {
       expect([403, 404]).toContain(res.status);
     });
 
-    it('prevents user from updating another user\'s profile', async () => {
-      // Other user cannot PUT /me with mainUser's token to change their own data
-      // Each user can only update their own profile - this is enforced via req.user
+    it('allows each user to update only their own profile (ownership enforced by req.user)', async () => {
+      // other user logs in with their own token and updates their own profile
       const res = await request(app)
         .put('/api/users/me')
         .set('Authorization', `Bearer ${otherUserToken}`)
         .send({ name: 'I took over' })
         .expect(200);
 
-      // The update should be applied to the other user, not the original
-      const dbUser = await prisma.user.findUnique({ where: { id: otherUserId } });
-      expect(dbUser.name).toBe('I took over');
+      // The update should be applied only to otherUser, not the original security test user
+      const dbOtherUser = await prisma.user.findUnique({ where: { id: otherUserId } });
+      expect(dbOtherUser.name).toBe('I took over');
+
+      // The original security test user's name must not change
+      const dbMainUser = await prisma.user.findFirst({ where: { email: { contains: 'security.test' } } });
+      if (dbMainUser) {
+        expect(dbMainUser.name).not.toBe('I took over');
+      }
     });
   });
 });

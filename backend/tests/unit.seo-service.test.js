@@ -4,7 +4,18 @@
  */
 import { SeoService } from '../src/services/seo.service.js';
 
-const FULL_CONTENT = `<h1>SaaS SEO Guide</h1><h2>Why SEO Matters</h2><p>Search engine optimization is critical for SaaS companies. ${' More detail here.'.repeat(30)}</p><h2>Key Strategies</h2><p>Focus on long-tail keywords. ${' Expand here.'.repeat(30)}</p><h3>Advanced Tips</h3><p>Use structured data. ${' More tips.'.repeat(20)}</p>`;
+const FULL_CONTENT = [
+  '<h1>SaaS SEO Guide</h1>',
+  '<h2>Why SEO Matters</h2>',
+  '<p>Search engine optimization is critical for SaaS companies.',
+  ' More detail here.'.repeat(30) + '</p>',
+  '<h2>Key Strategies</h2>',
+  '<p>Focus on long-tail keywords.',
+  ' Expand here.'.repeat(30) + '</p>',
+  '<h3>Advanced Tips</h3>',
+  '<p>Use structured data.',
+  ' More tips.'.repeat(20) + '</p>'
+].join('');
 
 describe('SeoService – scoreContent', () => {
   // ── Sanity / shape ──────────────────────────────────────────────
