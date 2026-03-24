@@ -1,0 +1,99 @@
+name: AI Service Tests
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'ai/**'
+      - '.github/workflows/ai-tests.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'ai/**'
+      - '.github/workflows/ai-tests.yml'
+
+jobs:
+  test:
+    name: AI Service – pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      GROQ_API_KEY: ""
+      GEMINI_API_KEY: ""
+      COHERE_API_KEY: ""
+      SERPER_API_KEY: ""
+      QDRANT_URL: ""
+      LOG_LEVEL: WARNING
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ai/requirements.txt
+
+      - name: Install dependencies
+        working-directory: ai
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests (no external APIs)
+        working-directory: ai
+        run: |
+          pytest tests/ \
+            -m "not slow and not integration" \
+            --tb=short \
+            -v \
+            --ignore=tests/test_topic_generation.py \
+            --ignore=tests/test_content_generation.py \
+            --ignore=tests/test_image_generation.py \
+            --ignore=tests/test_rag_service.py \
+            --ignore=tests/test_scraper_service.py
+
+      - name: Run all tests with coverage
+        working-directory: ai
+        run: |
+          pytest tests/ \
+            -m "not slow and not integration" \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing \
+            --ignore=tests/test_topic_generation.py \
+            --ignore=tests/test_content_generation.py \
+            --ignore=tests/test_image_generation.py \
+            --ignore=tests/test_rag_service.py \
+            --ignore=tests/test_scraper_service.py \
+            -v
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-coverage
+          path: ai/htmlcov/
+          retention-days: 14
+
+  lint:
+    name: AI Service – Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install lint tools
+        run: pip install ruff
+
+      - name: Run ruff linter
+        working-directory: ai
+        run: ruff check . --select=E,W,F --ignore=E501

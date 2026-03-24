@@ -8,7 +8,10 @@ describe('Integration Service Unit Tests', () => {
       expect(url).toContain('client_id');
       expect(url).toContain('redirect_uri');
       expect(url).toContain('state');
-      expect(url).toContain('user123');
+      // State is base64url-encoded JSON, so decode and verify userId
+      const stateParam = new URL(url).searchParams.get('state');
+      const decoded = JSON.parse(Buffer.from(stateParam, 'base64url').toString('utf8'));
+      expect(decoded.userId).toBe('user123');
     });
 
     it('should build LinkedIn auth URL', () => {
