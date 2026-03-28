@@ -1,6 +1,6 @@
 :root {
   font-size: clamp(15px, 0.95vw + 10px, 17px);
-  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-ui);
   line-height: 1.5;
   font-weight: 400;
   color: #1f1f25;
@@ -21,6 +21,16 @@
   --radius-lg: 24px;
   --radius-md: 18px;
   --radius-sm: 12px;
+  --font-ui: 'Poppins', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Segoe UI Variable Text',
+    'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-text-latin: 'Poppins', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Segoe UI Variable Text', 'Noto Sans', Arial, sans-serif;
+  --font-text-cyrillic: 'Inter', 'Segoe UI', 'Segoe UI Variable Text', 'Noto Sans', Arial, sans-serif;
+  --font-text-arabic: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  --font-text-japanese: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', system-ui, sans-serif;
+  --font-text-korean: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', 'Noto Sans KR', system-ui, sans-serif;
+  --font-text-chinese: 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Heiti SC', 'Noto Sans SC',
+    system-ui, sans-serif;
 }
 
 *,
@@ -34,6 +44,7 @@ body {
   min-height: 100vh;
   background: var(--color-bg);
   color: inherit;
+  font-family: var(--font-ui);
 }
 
 #root {
@@ -56,6 +67,48 @@ textarea,
 select {
   font: inherit;
   color: inherit;
+}
+
+.text-surface,
+.ui-field__input[data-script],
+.ui-textarea__control[data-script],
+.rich-editor__content[data-script],
+.rich-editor__preview[data-script] {
+  font-family: var(--font-text-latin);
+}
+
+[data-script='cyrillic'] {
+  font-family: var(--font-text-cyrillic);
+}
+
+[data-script='arabic'] {
+  font-family: var(--font-text-arabic);
+}
+
+[data-script='japanese'] {
+  font-family: var(--font-text-japanese);
+}
+
+[data-script='korean'] {
+  font-family: var(--font-text-korean);
+}
+
+[data-script='chinese'] {
+  font-family: var(--font-text-chinese);
+}
+
+.text-surface[data-text-dir='rtl'],
+.ui-field__input[data-text-dir='rtl'],
+.ui-textarea__control[data-text-dir='rtl'],
+.rich-editor__content[data-text-dir='rtl'],
+.rich-editor__preview[data-text-dir='rtl'] {
+  direction: rtl;
+  text-align: right;
+}
+
+.ui-field__input[data-text-dir='rtl']::placeholder,
+.ui-textarea__control[data-text-dir='rtl']::placeholder {
+  text-align: right;
 }
 
 button {

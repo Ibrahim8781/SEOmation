@@ -30,7 +30,9 @@ async function issueTokens(user, meta = {}) {
 
 async function register(data) {
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
-  if (existing) throw new ApiError(409, 'Email already in use');
+  if (existing) {
+    throw new ApiError(409, 'An account with this email already exists. Try signing in instead.');
+  }
 
   const passwordHash = await bcrypt.hash(data.password, 12);
   const user = await prisma.user.create({

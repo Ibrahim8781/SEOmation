@@ -106,7 +106,7 @@ export function SignupPage() {
               placeholder="Create a strong password"
               type="password"
               leftIcon={<FiLock />}
-              helperText="Use at least 8 characters, including upper/lowercase letters and a number."
+              helperText="Use at least 8 characters, including upper/lowercase letters and a number. Passwords must stay within bcrypt's 72-byte limit."
               error={errors.password?.message}
               {...register('password')}
             />

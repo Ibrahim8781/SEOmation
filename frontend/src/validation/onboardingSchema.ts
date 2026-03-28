@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { CADENCE_OPTIONS, CONTENT_FOCUS_OPTIONS, PLATFORM_OPTIONS } from '@/utils/constants';
+import { LANGUAGE_CODES } from '@/utils/languages';
 import type { BusinessProfile, Platform } from '@/types';
 
 const platformEnum = z.enum(PLATFORM_OPTIONS.map((option) => option.value) as [Platform, ...Platform[]]);
 const cadenceEnum = z.enum(CADENCE_OPTIONS.map((option) => option.value) as ['DAILY', 'WEEKLY', 'MONTHLY']);
-const languageEnum = z.enum(['EN', 'DE']);
+const languageEnum = z.enum(LANGUAGE_CODES);
 
 export const onboardingSchema = z.object({
   businessName: z.string().min(2, 'Please tell us your business name'),

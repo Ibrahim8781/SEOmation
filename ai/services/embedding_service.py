@@ -37,7 +37,13 @@ def _embed_cohere(texts: List[str]) -> List[List[float]]:
     return resp.embeddings
 
 def _embed_sbert(texts: List[str]) -> List[List[float]]:
-    from sentence_transformers import SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "sentence-transformers is required when EMBEDDER=sbert. "
+            "Install it explicitly or use the default Cohere embedder."
+        ) from exc
     model_name = settings.SBERT_MODEL
     model = SentenceTransformer(model_name)
     embs = model.encode(texts, show_progress_bar=False, convert_to_numpy=False, normalize_embeddings=True)

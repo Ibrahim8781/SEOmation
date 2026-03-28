@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { SUPPORTED_LANGUAGES } from '../utils/languages.js';
 
 const platformEnum = z.enum(['BLOG', 'LINKEDIN', 'INSTAGRAM']);
-const languageEnum = z.enum(['EN', 'DE']);
+const languageEnum = z.enum(SUPPORTED_LANGUAGES);
 const cadenceEnum = z.enum(['DAILY', 'WEEKLY', 'MONTHLY']);
 
 const businessProfileSchema = z.object({

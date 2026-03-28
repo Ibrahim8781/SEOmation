@@ -4,9 +4,12 @@ import { ScheduleAPI } from '@/api/schedule';
 import type { ScheduleJob } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
 import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/hooks/useAuth';
+import { formatScheduledDateTime } from '@/utils/scheduleTime';
 import './schedule.css';
 
 export function SchedulePage() {
+  const { user } = useAuth();
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +28,11 @@ export function SchedulePage() {
   };
 
   useEffect(() => {
-    void load();
+    const initializePage = async () => {
+      await load();
+    };
+
+    initializePage();
   }, []);
 
   const cancelJob = async (id: string) => {
@@ -74,7 +81,11 @@ export function SchedulePage() {
           <div className="schedule-table__row" key={job.id}>
             <span className={`pill pill-${job.platform.toLowerCase()}`}>{job.platform}</span>
             <span>{job.content?.title ?? 'Draft'}</span>
-            <span>{new Date(job.scheduledTime).toLocaleString()}</span>
+            <span>
+              {formatScheduledDateTime(job.scheduledTime, job.scheduledTimezone || user?.timezone)}
+              {' '}
+              ({job.scheduledTimezone || user?.timezone || 'UTC'})
+            </span>
             <span className={`pill status-${job.status.toLowerCase()}`}>{job.status}</span>
             <span>
               {job.status === 'SCHEDULED' && (

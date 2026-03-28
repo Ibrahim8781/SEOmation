@@ -1,22 +1,27 @@
 import { z } from 'zod';
+import { SUPPORTED_LANGUAGES } from '../utils/languages.js';
+import { CONTENT_PROMPT_MAX_LENGTH, IMAGE_PROMPT_MAX_LENGTH } from '../constants/input-limits.js';
+import { IMAGE_STYLE_PRESETS } from '../constants/image-styles.js';
 
 
 const platformEnum = z.enum(['BLOG', 'LINKEDIN', 'INSTAGRAM']);
-const languageEnum = z.enum(['EN', 'DE']);
+const languageEnum = z.enum(SUPPORTED_LANGUAGES);
+const imageStyleEnum = z.enum(IMAGE_STYLE_PRESETS);
 
 export const generateContentSchema = z.object({
 body: z.object({
 platform: platformEnum,
 language: languageEnum.optional(),
 topicId: z.string().uuid().optional(),
-prompt: z.string().min(5).optional(),
+prompt: z.string().min(5).max(CONTENT_PROMPT_MAX_LENGTH).optional(),
 focusKeyword: z.string().min(2).optional(),
 includeLinkedIn: z.boolean().optional(),
 includeInstagram: z.boolean().optional(),
  includeImage: z.boolean().optional(),
  includeLinkedInImage: z.boolean().optional(),
  includeInstagramImage: z.boolean().optional(),
- imagePrompt: z.string().min(3).optional(),
+ imagePrompt: z.string().min(3).max(IMAGE_PROMPT_MAX_LENGTH).optional(),
+ imageStyle: imageStyleEnum.optional(),
 targetLength: z.number().int().min(400).max(4000).optional(),
 tone: z.string().min(3).max(120).optional()
 }).refine((b) => b.topicId || b.prompt, {

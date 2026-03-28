@@ -1,13 +1,16 @@
 import { z } from 'zod';
+import { IMAGE_PROMPT_MAX_LENGTH } from '../constants/input-limits.js';
+import { IMAGE_STYLE_PRESETS } from '../constants/image-styles.js';
 
 const roleEnum = z.enum(['featured', 'inline', 'thumbnail', 'instagram_main', 'gallery']);
+const imageStyleEnum = z.enum(IMAGE_STYLE_PRESETS);
 
 export const generateImageSchema = z.object({
   params: z.object({ id: z.string().uuid() }),
   body: z.object({
-    prompt: z.string().min(3),
+    prompt: z.string().min(3).max(IMAGE_PROMPT_MAX_LENGTH),
     platform: z.enum(['blog', 'linkedin', 'instagram']).optional(),
-    style: z.string().max(120).optional(),
+    style: imageStyleEnum.optional(),
     sizes: z.array(z.string()).max(5).optional(),
     count: z.number().int().min(1).max(6).optional(),
     role: roleEnum.optional(),
@@ -25,7 +28,7 @@ export const uploadImageSchema = z.object({
     altText: z.string().max(240).optional(),
     role: roleEnum.optional(),
     position: z.number().int().min(0).optional(),
-    prompt: z.string().optional(),
+    prompt: z.string().max(IMAGE_PROMPT_MAX_LENGTH).optional(),
     width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(),
     format: z.string().optional(),

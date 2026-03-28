@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+TOPIC_SUGGESTION_COUNT = 6
+
 class Persona(BaseModel):
     role: str = Field(min_length=2)
     pains: List[str] = []
@@ -15,7 +17,7 @@ class TopicSuggestRequest(BaseModel):
     season: Optional[str] = None
     contentGoals: Optional[str] = None
     preferredContentTypes: List[str] = []
-    count: int = Field(default=12, ge=5, le=40)
+    count: int = Field(default=TOPIC_SUGGESTION_COUNT, ge=1, le=TOPIC_SUGGESTION_COUNT)
     includeTrends: bool = True
     namespace: Optional[str] = None
 
@@ -23,7 +25,7 @@ class ContentGenerateRequest(BaseModel):
     userId: str
     platform: str  # blog | linkedin | instagram
     language: str = "en"
-    topicOrIdea: str = Field(min_length=4)
+    topicOrIdea: str = Field(min_length=4, max_length=4000)
     tone: str = "friendly"
     targetLength: int = 1200
     focusKeyword: str = Field(min_length=2)
@@ -36,14 +38,8 @@ class ContentGenerateRequest(BaseModel):
     persona: Optional[Persona] = None
     namespace: Optional[str] = None
 
-class SeoHintRequest(BaseModel):
-    platform: str
-    language: str
-    focusKeyword: str
-    content: str
-
 class ImageGenerateRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=3, max_length=1000)
     platform: Optional[str] = None
     style: Optional[str] = None
     sizes: List[str] = []

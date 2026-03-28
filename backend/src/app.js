@@ -10,9 +10,26 @@ import { config } from './config/index.js';
 
 export const app = express();
 
+const allowedCorsOrigins = new Set(config.http.corsAllowedOrigins);
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedCorsOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new ApiError(403, 'CORS origin not allowed'));
+  },
+  optionsSuccessStatus: 204
+};
 
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: config.http.jsonLimit }));
 
 

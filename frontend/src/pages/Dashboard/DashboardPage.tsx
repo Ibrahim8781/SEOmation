@@ -16,6 +16,8 @@ import { TopicCard } from '@/components/dashboard/TopicCard';
 import { WriterCard } from '@/components/dashboard/WriterCard';
 import { FullScreenLoader } from '@/components/common/FullScreenLoader';
 import { Button } from '@/components/ui/Button';
+import { formatScheduledDateKey } from '@/utils/scheduleTime';
+import { TOPIC_SUGGESTION_COUNT } from '@/utils/topicLimits';
 import './dashboard.css';
 
 const numberFormatter = Intl.NumberFormat('en-US', {
@@ -166,7 +168,7 @@ export function DashboardPage() {
         contentGoals: businessProfile.contentGoals,
         preferredContentTypes: businessProfile.preferredContentTypes,
         includeTrends: businessProfile.includeTrends,
-        count: 12
+        count: TOPIC_SUGGESTION_COUNT
       };
 
       const { data } = await TopicAPI.generate({
@@ -194,7 +196,7 @@ export function DashboardPage() {
       !attemptedAutoGenerate
     ) {
       setAttemptedAutoGenerate(true);
-      void generateTopics();
+      generateTopics();
     }
   }, [loading, businessProfile, topics.length, generatingTopics, attemptedAutoGenerate, generateTopics]);
 
@@ -218,8 +220,8 @@ export function DashboardPage() {
     () =>
       jobs
         .filter((job) => job.scheduledTime)
-        .map((job) => dayjs(job.scheduledTime).format('YYYY-MM-DD')),
-    [jobs]
+        .map((job) => formatScheduledDateKey(job.scheduledTime, job.scheduledTimezone || user?.timezone)),
+    [jobs, user?.timezone]
   );
 
   const suggestedTopics = useMemo(() => {
@@ -231,7 +233,7 @@ export function DashboardPage() {
       businessProfile?.targetAudience,
       businessProfile?.primaryPlatforms?.[0],
       businessProfile?.language ?? user.language
-    ).slice(0, 6);
+    ).slice(0, TOPIC_SUGGESTION_COUNT);
   }, [businessProfile, topics, user]);
 
   if (loading && !user) {
@@ -313,7 +315,7 @@ export function DashboardPage() {
               disabled={generatingTopics}
               onClick={() => {
                 setAttemptedAutoGenerate(true);
-                void generateTopics();
+                generateTopics();
               }}
             >
               {generatingTopics ? 'Refreshing…' : 'Refresh topics'}

@@ -1,7 +1,13 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import ApiError from '../utils/ApiError.js';
 import { prisma } from '../lib/prisma.js';
 import { config } from '../config/index.js';
+import {
+  assertIntegrationTokenEncryptionReady,
+  encryptIntegrationToken,
+  sanitizeIntegrationSecrets
+} from './integration-token.service.js';
 
 const PLATFORMS = ['WORDPRESS', 'LINKEDIN', 'INSTAGRAM'];
 
@@ -22,6 +28,14 @@ function sanitizeOrigin(value) {
   }
 }
 
+function getStateSecret() {
+  const secret = String(config.integrations?.stateSecret || '').trim();
+  if (!secret) {
+    throw new ApiError(500, 'INTEGRATION_STATE_SECRET is required for secure OAuth state handling');
+  }
+  return secret;
+}
+
 function buildState(userId, platform, clientOrigin) {
   const payload = {
     userId,
@@ -32,48 +46,50 @@ function buildState(userId, platform, clientOrigin) {
   if (origin) {
     payload.origin = origin;
   }
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
-}
-
-function parseLegacyState(state) {
-  const [userId, platform, nonce] = String(state || '').split(':');
-  if (!userId || !platform || !nonce) throw new ApiError(400, 'Invalid state');
-  return { userId, platform };
-}
-
-function parseEncodedState(state) {
-  const decoded = Buffer.from(String(state || ''), 'base64url').toString('utf8');
-  const payload = JSON.parse(decoded);
-  if (!payload?.userId || !payload?.platform || !payload?.nonce) {
-    throw new ApiError(400, 'Invalid state');
-  }
-  return payload;
+  return jwt.sign(payload, getStateSecret(), {
+    expiresIn: Math.max(60, Number(config.integrations?.stateTtlSeconds || 900)),
+    issuer: 'seomation',
+    audience: 'integration-oauth'
+  });
 }
 
 function parseState(state, expectedPlatform) {
-  let payload;
-
   try {
-    payload = parseEncodedState(state);
-  } catch (_error) {
-    payload = parseLegacyState(state);
-  }
+    const payload = jwt.verify(String(state || ''), getStateSecret(), {
+      issuer: 'seomation',
+      audience: 'integration-oauth'
+    });
 
-  const { userId, platform } = payload;
-  const normalized = normalizePlatform(platform);
-  if (expectedPlatform && normalizePlatform(expectedPlatform) !== normalized) {
-    throw new ApiError(400, 'State/platform mismatch');
+    if (!payload?.userId || !payload?.platform || !payload?.nonce) {
+      throw new ApiError(400, 'Invalid OAuth state');
+    }
+
+    const { userId, platform } = payload;
+    const normalized = normalizePlatform(platform);
+    if (expectedPlatform && normalizePlatform(expectedPlatform) !== normalized) {
+      throw new ApiError(400, 'State/platform mismatch');
+    }
+    return {
+      userId,
+      platform: normalized,
+      clientOrigin: sanitizeOrigin(payload.origin)
+    };
+  } catch (_error) {
+    throw new ApiError(400, 'Invalid or expired OAuth state');
   }
-  return {
-    userId,
-    platform: normalized,
-    clientOrigin: sanitizeOrigin(payload.origin)
-  };
 }
 
 function getIntegrationConfig(platform) {
   const key = platform.toLowerCase();
   return config.integrations?.[key] || {};
+}
+
+function ensureTokenProtectionConfigured() {
+  try {
+    assertIntegrationTokenEncryptionReady();
+  } catch (error) {
+    throw new ApiError(500, error.message);
+  }
 }
 
 async function exchangeWordpressToken(code, conf, redirect) {
@@ -100,11 +116,12 @@ async function exchangeWordpressToken(code, conf, redirect) {
   const data = await resp.json();
   const accessToken = data.access_token;
   if (!accessToken) throw new ApiError(400, 'WordPress access token missing in response');
+  const refreshToken = data.refresh_token || null;
   const expiresAt =
     data.expires_in && Number.isFinite(data.expires_in)
       ? new Date(Date.now() + Number(data.expires_in) * 1000)
       : null;
-  return { accessToken, expiresAt };
+  return { accessToken, refreshToken, expiresAt };
 }
 
 async function fetchWpTokenInfo(accessToken, clientId) {
@@ -169,11 +186,12 @@ async function exchangeLinkedInToken(code, conf, redirect) {
   const data = await resp.json();
   const accessToken = data.access_token;
   if (!accessToken) throw new ApiError(400, 'LinkedIn access token missing in response');
+  const refreshToken = data.refresh_token || null;
   const expiresAt =
     data.expires_in && Number.isFinite(data.expires_in)
       ? new Date(Date.now() + Number(data.expires_in) * 1000)
       : null;
-  return { accessToken, expiresAt };
+  return { accessToken, refreshToken, expiresAt };
 }
 
 async function fetchLinkedInProfile(accessToken) {
@@ -208,11 +226,7 @@ async function fetchLinkedInProfile(accessToken) {
 }
 
 function sanitizeIntegration(integration) {
-  if (!integration) return integration;
-  const { accessToken, refreshToken, ...safeIntegration } = integration;
-  void accessToken;
-  void refreshToken;
-  return safeIntegration;
+  return sanitizeIntegrationSecrets(integration);
 }
 
 function summarizeIntegration(integration) {
@@ -274,6 +288,7 @@ export const IntegrationService = {
   },
 
   buildAuthUrl(userId, platform, clientOrigin) {
+    ensureTokenProtectionConfigured();
     const normalized = normalizePlatform(platform);
     const state = buildState(userId, normalized, clientOrigin);
     const conf = getIntegrationConfig(normalized);
@@ -302,6 +317,7 @@ export const IntegrationService = {
 
   async handleCallback(userId, platform, payload) {
     const normalized = normalizePlatform(platform);
+    ensureTokenProtectionConfigured();
     if (payload.error) {
       throw new ApiError(400, `OAuth error: ${payload.error}`);
     }
@@ -316,6 +332,7 @@ export const IntegrationService = {
       `${config.integrations?.callbackBase || ''}/api/integrations/${normalized.toLowerCase()}/callback`;
 
     let accessToken = code;
+    let refreshToken = payload.refreshToken || null;
     let expiresAt =
       payload.expiresAt || (payload.expires_in ? new Date(Date.now() + Number(payload.expires_in) * 1000) : null);
     let metadata = payload.metadata || null;
@@ -323,6 +340,7 @@ export const IntegrationService = {
     if (normalized === 'LINKEDIN' && payload.code) {
       const exchanged = await exchangeLinkedInToken(payload.code, conf, redirect);
       accessToken = exchanged.accessToken;
+      refreshToken = exchanged.refreshToken || refreshToken;
       expiresAt = exchanged.expiresAt;
       const profile = await fetchLinkedInProfile(accessToken);
       if (profile.urn) {
@@ -346,6 +364,7 @@ export const IntegrationService = {
       if (payload.code && (conf.authUrl || '').includes('wordpress.com')) {
         const exchanged = await exchangeWordpressToken(payload.code, conf, redirect);
         accessToken = exchanged.accessToken;
+        refreshToken = exchanged.refreshToken || refreshToken;
         expiresAt = exchanged.expiresAt;
       }
 
@@ -395,16 +414,16 @@ export const IntegrationService = {
     const integration = await prisma.platformIntegration.upsert({
       where: { userId_platform: { userId, platform: normalized } },
       update: {
-        accessToken,
-        refreshToken: payload.refreshToken || null,
+        accessToken: encryptIntegrationToken(accessToken),
+        refreshToken: encryptIntegrationToken(refreshToken),
         expiresAt,
         metadata
       },
       create: {
         userId,
         platform: normalized,
-        accessToken,
-        refreshToken: payload.refreshToken || null,
+        accessToken: encryptIntegrationToken(accessToken),
+        refreshToken: encryptIntegrationToken(refreshToken),
         expiresAt,
         metadata
       }

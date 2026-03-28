@@ -4,8 +4,13 @@ import './config/index.js';
 import { app } from './app.js';
 import logger from './lib/logger.js';
 import { startSmartScheduler, getScheduler } from './services/smart-scheduler.service.js';
+import { backfillIntegrationTokenEncryption } from './services/integration-token.service.js';
 
 const port = process.env.PORT || 3000;
+
+backfillIntegrationTokenEncryption().catch((err) => {
+  logger.error({ err }, 'Failed to backfill encrypted OAuth tokens');
+});
 
 // Start smart scheduler
 startSmartScheduler()

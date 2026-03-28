@@ -14,6 +14,7 @@ export const ScheduleController = {
         payload.body.integrationId,
         payload.body.platform,
         payload.body.scheduledTime,
+        payload.body.timezone ?? req.user.timezone,
         payload.body.media
       );
 
@@ -35,6 +36,7 @@ export const ScheduleController = {
         payload.params.id,
         payload.body.integrationId,
         payload.body.platform,
+        req.user.timezone,
         payload.body.media
       );
 

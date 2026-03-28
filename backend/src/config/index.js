@@ -9,6 +9,46 @@ const backendRoot = path.resolve(__dirname, '..', '..');
 const appBaseUrl = process.env.APP_BASE_URL || '';
 const assetPublicPath = process.env.ASSET_PUBLIC_PATH || '/media';
 
+function toOrigin(value) {
+  if (!value) return '';
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+}
+
+function parseOriginList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => toOrigin(item.trim()))
+    .filter(Boolean);
+}
+
+const inferredCorsOrigins = [
+  appBaseUrl,
+  process.env.INTEGRATION_CALLBACK_BASE,
+  process.env.PUBLIC_ASSET_BASE_URL
+]
+  .map(toOrigin)
+  .filter(Boolean);
+
+const configuredCorsOrigins = parseOriginList(process.env.CORS_ALLOWED_ORIGINS);
+const devCorsOrigins =
+  (process.env.NODE_ENV || 'development') === 'production'
+    ? []
+    : [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:4173',
+        'http://127.0.0.1:4173'
+      ];
+const corsAllowedOrigins = Array.from(
+  new Set([...configuredCorsOrigins, ...inferredCorsOrigins, ...devCorsOrigins])
+);
+
 export const config = {
 env: process.env.NODE_ENV || 'development',
 port: Number(process.env.PORT || 3000),
@@ -21,7 +61,8 @@ accessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
 refreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d'
 },
 http: {
-jsonLimit: process.env.JSON_BODY_LIMIT || '15mb'
+jsonLimit: process.env.JSON_BODY_LIMIT || '15mb',
+corsAllowedOrigins
 },
 ai: {
 url: process.env.AI_SERVICE_URL || '',
@@ -35,6 +76,9 @@ seoMs: Number(process.env.AI_SEO_TIMEOUT_MS || 30000)
 },
 integrations: {
 callbackBase: process.env.INTEGRATION_CALLBACK_BASE || process.env.APP_BASE_URL || '',
+tokenEncryptionKey: process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY || '',
+stateSecret: process.env.INTEGRATION_STATE_SECRET || process.env.JWT_ACCESS_SECRET || '',
+stateTtlSeconds: Number(process.env.INTEGRATION_STATE_TTL_SECONDS || 900),
 wordpress: {
 authUrl: process.env.WP_AUTH_URL || '',
 clientId: process.env.WP_CLIENT_ID || '',
@@ -55,9 +99,6 @@ clientId: process.env.IG_CLIENT_ID || '',
 redirectUri: process.env.IG_REDIRECT_URI || '',
 scope: process.env.IG_SCOPE || ''
 }
-},
-publisher: {
-intervalMs: Number(process.env.PUBLISHER_INTERVAL_MS || 60000)
 },
 assets: {
 publicPath: assetPublicPath.startsWith('/') ? assetPublicPath : `/${assetPublicPath}`,

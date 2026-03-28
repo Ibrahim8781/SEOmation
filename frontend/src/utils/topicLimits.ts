@@ -1,0 +1,1 @@
+export const TOPIC_SUGGESTION_COUNT = 6;

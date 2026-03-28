@@ -11,11 +11,12 @@ async def generate_image(req: ImageGenerateRequest):
     requested_sizes = list(req.sizes or [])
     image_count = max(req.count, len(requested_sizes), 1)
     prompts = [req.prompt] * image_count
-    platform = req.platform or req.style or "blog"
+    platform = req.platform or "blog"
     images = await generate_images(
         prompts,
         platform=platform,
         language=req.language,
         sizes=requested_sizes,
+        style=req.style,
     )
     return ImageGenerateResponse(altText=req.prompt, images=images)

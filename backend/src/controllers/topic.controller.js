@@ -1,5 +1,6 @@
 import FastAPIService from '../services/fastapi.service.js';
 import { TopicService } from '../services/topic.service.js';
+import { TOPIC_SUGGESTION_COUNT } from '../constants/topic-limits.js';
 
 export const TopicController = {
     /**
@@ -59,11 +60,11 @@ export const TopicController = {
                     ? includeTrendsValue.toLowerCase() !== 'false'
                     : Boolean(includeTrendsValue);
 
-            const countValue = baseContext.count ?? 12;
+            const countValue = baseContext.count ?? TOPIC_SUGGESTION_COUNT;
             const countNumber = Number.parseInt(countValue, 10);
             const resolvedCount = Number.isFinite(countNumber)
-                ? Math.min(40, Math.max(5, countNumber))
-                : 12;
+                ? Math.min(TOPIC_SUGGESTION_COUNT, Math.max(1, countNumber))
+                : TOPIC_SUGGESTION_COUNT;
 
             const resolvedContext = {
                 ...baseContext,

@@ -26,6 +26,27 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.content-editor-sync {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.content-editor-sync.is-dirty {
+  background: #fff3df;
+  color: #b15600;
+  border: 1px solid #ffd591;
+}
+
+.content-editor-sync.is-synced {
+  background: #edf9ef;
+  color: #237804;
+  border: 1px solid #b7eb8f;
 }
 
 .content-editor-grid {

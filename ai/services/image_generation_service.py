@@ -60,6 +60,38 @@ PROMPT_NEGATIVES = [
     "no blur",
     "no distortion",
 ]
+STYLE_PRESET_HINTS = {
+    "editorial": [
+        "editorial magazine art direction",
+        "premium branded composition",
+        "modern marketing visual",
+    ],
+    "photorealistic": [
+        "photorealistic image",
+        "true-to-life textures",
+        "realistic lighting",
+    ],
+    "illustration": [
+        "polished digital illustration",
+        "clean commercial artwork",
+        "high-end illustrative style",
+    ],
+    "minimal": [
+        "minimalist composition",
+        "clean negative space",
+        "refined simple aesthetic",
+    ],
+    "cinematic": [
+        "cinematic lighting",
+        "dramatic depth",
+        "story-driven composition",
+    ],
+    "3d-render": [
+        "premium 3D render",
+        "studio-quality materials",
+        "high-fidelity product visualization",
+    ],
+}
 
 
 def normalize_platform(platform: Optional[str]) -> str:
@@ -140,9 +172,18 @@ def extract_kie_result_urls(task_data: Dict) -> List[str]:
     raise RuntimeError("kie.ai returned success without resultUrls")
 
 
-def enhance_prompt_for_quality(prompt: str) -> str:
+def normalize_style_preset(style: Optional[str]) -> Optional[str]:
+    normalized = str(style or "").strip().lower().replace("_", "-").replace(" ", "-")
+    if normalized in STYLE_PRESET_HINTS:
+        return normalized
+    return None
+
+
+def enhance_prompt_for_quality(prompt: str, style: Optional[str] = None) -> str:
     cleaned_prompt = prompt.strip()
-    return f"{cleaned_prompt}, {', '.join(PROMPT_BOOSTERS)}, {', '.join(PROMPT_NEGATIVES)}"
+    style_hints = STYLE_PRESET_HINTS.get(normalize_style_preset(style) or "", [])
+    segments = [cleaned_prompt, *style_hints, *PROMPT_BOOSTERS, *PROMPT_NEGATIVES]
+    return ", ".join(part for part in segments if part)
 
 
 def parse_provider_order() -> List[str]:
@@ -180,12 +221,13 @@ def has_usable_together_key() -> bool:
     return True
 
 
-async def generate_with_together(prompt: str, size: str) -> Dict:
+async def generate_with_together(prompt: str, size: str, style: Optional[str] = None) -> Dict:
     if not has_usable_together_key():
         raise RuntimeError("TOGETHER_API_KEY is missing or still set to a placeholder value")
 
     width, height = parse_resolution(size)
-    enhanced_prompt = enhance_prompt_for_quality(prompt)
+    normalized_style = normalize_style_preset(style)
+    enhanced_prompt = enhance_prompt_for_quality(prompt, normalized_style)
     payload = {
         "model": settings.TOGETHER_IMAGE_MODEL,
         "prompt": enhanced_prompt,
@@ -232,6 +274,7 @@ async def generate_with_together(prompt: str, size: str) -> Dict:
             "timeoutSeconds": settings.TOGETHER_IMAGE_TIMEOUT_SECONDS,
             "original_prompt": prompt,
             "enhanced_prompt": enhanced_prompt,
+            "style": normalized_style,
         },
     }
 
@@ -262,13 +305,14 @@ async def poll_kie_task(task_id: str, headers: Dict[str, str]) -> Dict:
     raise RuntimeError(f"kie.ai task timed out after {settings.KIE_POLL_TIMEOUT_SECONDS}s")
 
 
-async def generate_with_kie(prompt: str, platform: str) -> Dict:
+async def generate_with_kie(prompt: str, platform: str, style: Optional[str] = None) -> Dict:
     if not settings.KIE_API_KEY:
         raise RuntimeError("KIE_API_KEY not configured")
 
     image_size = get_kie_size_for_platform(platform)
     width, height = KIE_SIZE_DIMS.get(image_size, (1024, 1024))
-    enhanced_prompt = enhance_prompt_for_quality(prompt)
+    normalized_style = normalize_style_preset(style)
+    enhanced_prompt = enhance_prompt_for_quality(prompt, normalized_style)
     headers = {
         "Authorization": f"Bearer {settings.KIE_API_KEY}",
         "Content-Type": "application/json",
@@ -324,6 +368,7 @@ async def generate_with_kie(prompt: str, platform: str) -> Dict:
             "timeoutSeconds": settings.KIE_POLL_TIMEOUT_SECONDS,
             "original_prompt": prompt,
             "enhanced_prompt": enhanced_prompt,
+            "style": normalized_style,
             "sourceDetails": {
                 "originalUrl": image_url,
                 "isPublic": True,
@@ -332,13 +377,14 @@ async def generate_with_kie(prompt: str, platform: str) -> Dict:
     }
 
 
-async def generate_with_huggingface(prompt: str, size: str) -> Dict:
+async def generate_with_huggingface(prompt: str, size: str, style: Optional[str] = None) -> Dict:
     if not settings.HUGGINGFACE_API_KEY:
         raise RuntimeError("HUGGINGFACE_API_KEY not configured")
 
     requested_width, requested_height = parse_resolution(size)
     width, height = normalize_huggingface_resolution(size)
-    enhanced_prompt = enhance_prompt_for_quality(prompt)
+    normalized_style = normalize_style_preset(style)
+    enhanced_prompt = enhance_prompt_for_quality(prompt, normalized_style)
     model_url = (
         "https://router.huggingface.co/hf-inference/models/"
         f"{settings.HUGGINGFACE_IMAGE_MODEL}"
@@ -392,6 +438,7 @@ async def generate_with_huggingface(prompt: str, size: str) -> Dict:
             "timeoutSeconds": settings.HUGGINGFACE_IMAGE_TIMEOUT_SECONDS,
             "original_prompt": prompt,
             "enhanced_prompt": enhanced_prompt,
+            "style": normalized_style,
         },
     }
 
@@ -459,8 +506,10 @@ async def generate_image(
     platform: str = "blog",
     language: str = "en",
     size: Optional[str] = None,
+    style: Optional[str] = None,
 ) -> Dict:
     normalized_platform = normalize_platform(platform)
+    normalized_style = normalize_style_preset(style)
     resolved_size = size or get_resolution_for_platform(normalized_platform)
     alt_text = await generate_alt_text(prompt, language)
     errors = []
@@ -475,11 +524,11 @@ async def generate_image(
     for provider in provider_order:
         try:
             if provider == "together":
-                result = await generate_with_together(prompt, resolved_size)
+                result = await generate_with_together(prompt, resolved_size, normalized_style)
             elif provider == "kie":
-                result = await generate_with_kie(prompt, normalized_platform)
+                result = await generate_with_kie(prompt, normalized_platform, normalized_style)
             elif provider == "huggingface":
-                result = await generate_with_huggingface(prompt, resolved_size)
+                result = await generate_with_huggingface(prompt, resolved_size, normalized_style)
             else:
                 result = generate_placeholder(prompt, resolved_size)
 
@@ -519,6 +568,7 @@ async def generate_images(
     platform: str = "blog",
     language: str = "en",
     sizes: Optional[List[str]] = None,
+    style: Optional[str] = None,
 ) -> List[Dict]:
     requested_sizes = list(sizes or [])
 
@@ -530,7 +580,7 @@ async def generate_images(
         return requested_sizes[-1]
 
     tasks = [
-        generate_image(prompt, platform=platform, language=language, size=resolve_size(index))
+        generate_image(prompt, platform=platform, language=language, size=resolve_size(index), style=style)
         for index, prompt in enumerate(prompts)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

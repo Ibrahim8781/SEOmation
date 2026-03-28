@@ -169,7 +169,7 @@ async def generate_content(req: ContentGenerateRequest):
     
     # STEP 5: Generate with Gemini
     try:
-        content, diagnostics = await generate_content_json(
+        content, diagnostics, metrics = await generate_content_json(
             platform=req.platform,
             language=req.language,
             topic_or_idea=req.topicOrIdea,
@@ -204,5 +204,6 @@ async def generate_content(req: ContentGenerateRequest):
     
     return ContentGenerateResponse(
         contentForEditor=content,
-        diagnostics=diagnostics
+        diagnostics=diagnostics,
+        metrics=metrics,
     )

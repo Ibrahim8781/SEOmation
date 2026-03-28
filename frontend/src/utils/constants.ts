@@ -1,4 +1,5 @@
-import type { Language, Platform } from '@/types';
+import type { Platform } from '@/types';
+export { LANGUAGE_OPTIONS } from './languages';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api';
 
@@ -6,11 +7,6 @@ export const PLATFORM_OPTIONS: { label: string; value: Platform }[] = [
   { label: 'Blog', value: 'BLOG' },
   { label: 'LinkedIn', value: 'LINKEDIN' },
   { label: 'Instagram', value: 'INSTAGRAM' }
-];
-
-export const LANGUAGE_OPTIONS: { label: string; value: Language }[] = [
-  { label: 'English (EN)', value: 'EN' },
-  { label: 'German (DE)', value: 'DE' }
 ];
 
 export const TIMEZONE_OPTIONS = [

@@ -1,5 +1,8 @@
 import ApiError from '../utils/ApiError.js';
 import { prisma } from '../lib/prisma.js';
+import { sanitizeIntegrationSecrets } from './integration-token.service.js';
+import { formatUtcInTimeZone, isValidTimeZone, zonedLocalDateTimeToUtc } from '../utils/datetime.js';
+import { sanitizeContentRecord } from '../utils/html-content.js';
 
 const SUPPORTED = ['WORDPRESS', 'LINKEDIN', 'INSTAGRAM'];
 
@@ -34,17 +37,40 @@ function validateMedia(platform, media) {
   return media || null;
 }
 
+function sanitizeScheduledJob(job) {
+  if (!job) return job;
+  return {
+    ...job,
+    ...(job.content ? { content: sanitizeContentRecord(job.content) } : {}),
+    ...(job.integration ? { integration: sanitizeIntegrationSecrets(job.integration) } : {})
+  };
+}
+
 export const ScheduleService = {
-  async schedule(userId, contentId, integrationId, platform, scheduledTime, media) {
+  async schedule(userId, contentId, integrationId, platform, scheduledTime, timezone, media) {
     const content = await ownedContent(contentId, userId);
     const integration = await ownedIntegration(integrationId, userId);
     const normalizedPlatform = normalizePlatform(platform || integration.platform);
     if (normalizedPlatform === 'WORDPRESS' && !((integration.metadata || {}).siteUrl || (integration.metadata || {}).siteId)) {
       throw new ApiError(400, 'WordPress site is not selected. Reconnect and pick a site.');
     }
-    const when = new Date(scheduledTime);
+
+    const normalizedTimezone = String(timezone || '').trim();
+    if (!isValidTimeZone(normalizedTimezone)) {
+      throw new ApiError(400, 'A valid IANA timezone is required for scheduling');
+    }
+
+    let when;
+    try {
+      when =
+        scheduledTime instanceof Date
+          ? new Date(scheduledTime)
+          : zonedLocalDateTimeToUtc(scheduledTime, normalizedTimezone);
+    } catch {
+      throw new ApiError(400, 'scheduledTime is invalid for the selected timezone');
+    }
     if (Number.isNaN(when.getTime())) {
-      throw new ApiError(400, 'scheduledTime is invalid');
+      throw new ApiError(400, 'scheduledTime is invalid for the selected timezone');
     }
 
     const normalizedMedia = validateMedia(normalizedPlatform, media);
@@ -54,30 +80,37 @@ export const ScheduleService = {
       integrationId: integration.id,
       platform: normalizedPlatform,
       scheduledTime: when,
+      scheduledTimezone: normalizedTimezone,
       media: normalizedMedia,
       status: 'SCHEDULED',
       attempts: 0,
       lastError: null
     };
 
-    return prisma.scheduleJob.create({
+    const job = await prisma.scheduleJob.create({
       data: {
         ...data
       },
       include: { content: true, integration: true }
     });
+    return sanitizeScheduledJob(job);
   },
 
-  async publishNow(userId, contentId, integrationId, platform, media) {
-    return this.schedule(userId, contentId, integrationId, platform, new Date(), media);
+  async publishNow(userId, contentId, integrationId, platform, timezone, media) {
+    const now = new Date();
+    const normalizedTimezone = String(timezone || '').trim();
+    const scheduledNow =
+      isValidTimeZone(normalizedTimezone) ? formatUtcInTimeZone(now, normalizedTimezone) : now;
+    return this.schedule(userId, contentId, integrationId, platform, scheduledNow, normalizedTimezone, media);
   },
 
   async list(userId) {
-    return prisma.scheduleJob.findMany({
+    const jobs = await prisma.scheduleJob.findMany({
       where: { content: { userId } },
       include: { content: true, integration: true, result: true },
       orderBy: { scheduledTime: 'desc' }
     });
+    return jobs.map(sanitizeScheduledJob);
   },
 
   async cancel(userId, jobId) {

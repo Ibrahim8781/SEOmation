@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import dayjs from 'dayjs';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { FiChevronDown, FiClock, FiImage, FiLoader, FiSave, FiSend } from 'react-icons/fi';
 import { ContentAPI, type GenerateImagePayload } from '@/api/content';
 import { IntegrationsAPI } from '@/api/integrations';
 import { ScheduleAPI, type PublishPayload, type SchedulePayload } from '@/api/schedule';
+import { RichTextEditor } from '@/components/editor/RichTextEditor';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
+import { useAuth } from '@/hooks/useAuth';
 import type {
   ContentImageLink,
   ContentItem,
@@ -20,9 +21,27 @@ import type {
   SeoSummary
 } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
+import { IMAGE_PROMPT_MAX_LENGTH, LINKEDIN_POST_MAX_LENGTH } from '@/utils/inputLimits';
+import { IMAGE_STYLE_OPTIONS, normalizeImageStyle, type ImageStylePreset } from '@/utils/imageStyles';
+import { getTextSurfaceProps } from '@/utils/languagePresentation';
+import {
+  formatDateTimeLocalMin,
+  formatScheduledDateTime,
+  isFutureScheduledInput,
+  resolveScheduleTimeZone
+} from '@/utils/scheduleTime';
 import './contentEditor.css';
 
 type Severity = SeoComponentScore['severity'];
+type EditorSnapshot = {
+  title: string;
+  metaDescription: string;
+  primaryKeyword: string;
+  secondaryKeywords: string[];
+  bodyHtml: string;
+  linkedinText: string;
+  instagramText: string;
+};
 
 const severityClass: Record<Severity, string> = {
   ok: 'seo-chip--ok',
@@ -58,6 +77,9 @@ const platformOptions: { label: string; value: IntegrationPlatform }[] = [
   { label: 'Instagram', value: 'INSTAGRAM' }
 ];
 
+const META_DESCRIPTION_MIN_LENGTH = 140;
+const META_DESCRIPTION_MAX_LENGTH = 160;
+
 function toSecondary(input: string): string[] {
   if (!input) return [];
   return input
@@ -90,6 +112,7 @@ export function ContentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [scoring, setScoring] = useState(false);
@@ -109,6 +132,7 @@ export function ContentEditorPage() {
   const [images, setImages] = useState<ContentImageLink[]>([]);
   const [imageLoading, setImageLoading] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
+  const [imageStyle, setImageStyle] = useState<ImageStylePreset>('auto');
   const [imageCount, setImageCount] = useState(1);
   const [imagePlatform, setImagePlatform] = useState<'blog' | 'linkedin' | 'instagram'>('blog');
   const [imageRole, setImageRole] = useState('featured');
@@ -122,9 +146,36 @@ export function ContentEditorPage() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<IntegrationPlatform>('WORDPRESS');
   const [scheduledTime, setScheduledTime] = useState('');
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<EditorSnapshot | null>(null);
   const scoreTimer = useRef<number | null>(null);
   const publishIntent = (location.state as { openPublishModal?: boolean } | null)?.openPublishModal;
   const [activeSidePanel, setActiveSidePanel] = useState<'seo' | 'images' | 'publishing'>('seo');
+  const scheduleTimeZone = resolveScheduleTimeZone(user?.timezone);
+  const contentLanguage = content?.language ?? user?.language ?? 'EN';
+  const textSurfaceProps = useMemo(() => getTextSurfaceProps(contentLanguage), [contentLanguage]);
+  const metaDescriptionHelperText = useMemo(() => {
+    const length = metaDescription.trim().length;
+    if (!length) {
+      return `0 characters • Recommended: ${META_DESCRIPTION_MIN_LENGTH}-${META_DESCRIPTION_MAX_LENGTH}`;
+    }
+    if (length < META_DESCRIPTION_MIN_LENGTH) {
+      return `${length} characters • ${META_DESCRIPTION_MIN_LENGTH - length} below recommended minimum`;
+    }
+    if (length > META_DESCRIPTION_MAX_LENGTH) {
+      return `${length} characters • ${length - META_DESCRIPTION_MAX_LENGTH} above recommended maximum`;
+    }
+    return `${length} characters • Ideal length`;
+  }, [metaDescription]);
+  const linkedInHelperText = useMemo(() => {
+    const length = linkedinText.trim().length;
+    if (!length) {
+      return `0/${LINKEDIN_POST_MAX_LENGTH} characters`;
+    }
+    if (length > LINKEDIN_POST_MAX_LENGTH) {
+      return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters • ${length - LINKEDIN_POST_MAX_LENGTH} over LinkedIn's limit`;
+    }
+    return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters`;
+  }, [linkedinText]);
 
   const load = async () => {
     if (!id) return;
@@ -133,25 +184,61 @@ export function ContentEditorPage() {
     setErrorMessage('');
     try {
       const { data } = await ContentAPI.getById(id);
+      const nextTitle = data.title ?? '';
+      const nextMetaDescription = data.metaDescription ?? generatedMetaDescriptionFromContent(data) ?? '';
+      const nextPrimaryKeyword = data.primaryKeyword ?? generatedPrimaryKeywordFromContent(data) ?? '';
+      const nextSecondaryKeywords = data.secondaryKeywords ?? [];
+      const nextBodyHtml = data.html ?? data.text ?? '';
+      const social = data.aiMeta?.social ?? {};
+      const nextLinkedinText = normalizeLinkedInDraftText(social.linkedin?.text || '');
+      const nextInstagramText = social.instagram?.text || '';
       setContent(data);
-      setTitle(data.title ?? '');
-      setMetaDescription(data.metaDescription ?? generatedMetaDescriptionFromContent(data) ?? '');
-      setPrimaryKeyword(data.primaryKeyword ?? generatedPrimaryKeywordFromContent(data) ?? '');
-      const loadedSecondaryKeywords = data.secondaryKeywords ?? [];
-      setSecondaryKeywords(loadedSecondaryKeywords);
-      setSecondaryKeywordsInput(loadedSecondaryKeywords.join(', '));
-      setBodyHtml(data.html ?? data.text ?? '');
+      setTitle(nextTitle);
+      setMetaDescription(nextMetaDescription);
+      setPrimaryKeyword(nextPrimaryKeyword);
+      setSecondaryKeywords(nextSecondaryKeywords);
+      setSecondaryKeywordsInput(nextSecondaryKeywords.join(', '));
+      setBodyHtml(nextBodyHtml);
       setSeoSummary(data.seoSummary ?? null);
       setImagePrompt(data.title ?? '');
-      const social = data.aiMeta?.social ?? {};
-      setLinkedinText(social.linkedin?.text || '');
-      setInstagramText(social.instagram?.text || '');
+      setLinkedinText(nextLinkedinText);
+      setInstagramText(nextInstagramText);
+      setLastSavedSnapshot(
+        buildEditorSnapshot({
+          title: nextTitle,
+          metaDescription: nextMetaDescription,
+          primaryKeyword: nextPrimaryKeyword,
+          secondaryKeywords: nextSecondaryKeywords,
+          bodyHtml: nextBodyHtml,
+          linkedinText: nextLinkedinText,
+          instagramText: nextInstagramText
+        })
+      );
     } catch (err) {
       setLoadError(extractErrorMessage(err, 'Unable to load this draft.'));
     } finally {
       setLoading(false);
     }
   };
+
+  const currentSnapshot = useMemo(
+    () =>
+      buildEditorSnapshot({
+        title,
+        metaDescription,
+        primaryKeyword,
+        secondaryKeywords,
+        bodyHtml,
+        linkedinText,
+        instagramText
+      }),
+    [title, metaDescription, primaryKeyword, secondaryKeywords, bodyHtml, linkedinText, instagramText]
+  );
+
+  const isDirty = useMemo(() => {
+    if (!lastSavedSnapshot) return false;
+    return JSON.stringify(currentSnapshot) !== JSON.stringify(lastSavedSnapshot);
+  }, [currentSnapshot, lastSavedSnapshot]);
 
   const syncSelectedImages = (items: ContentImageLink[]) => {
     const featured = items.find((item) => item.role === 'featured') ?? items[0] ?? null;
@@ -200,10 +287,11 @@ export function ContentEditorPage() {
   };
 
   useEffect(() => {
-    void load();
-    void loadImages();
-    void loadIntegrations();
-    void loadJobs();
+    const initializePage = async () => {
+      await Promise.all([load(), loadImages(), loadIntegrations(), loadJobs()]);
+    };
+
+    initializePage();
   }, [id]);
 
   useEffect(() => {
@@ -246,10 +334,9 @@ export function ContentEditorPage() {
     };
   }, [title, metaDescription, bodyHtml, primaryKeyword, secondaryKeywords, images]);
 
-  const handleSave = async () => {
+  const saveDraft = useCallback(async (options?: { successMessage?: string }) => {
     if (!id) return;
     setSaving(true);
-    setStatusMessage('');
     setErrorMessage('');
     try {
       const { data } = await ContentAPI.saveDraftWithSeo(id, {
@@ -264,25 +351,49 @@ export function ContentEditorPage() {
       });
       setContent(data.item);
       setSeoSummary(data.seo);
-      setStatusMessage(`Saved with SEO score ${Math.round(data.seo.total)}`);
+      setLastSavedSnapshot(
+        buildEditorSnapshot({
+          title,
+          metaDescription,
+          primaryKeyword,
+          secondaryKeywords,
+          bodyHtml,
+          linkedinText,
+          instagramText
+        })
+      );
+      setStatusMessage(options?.successMessage ?? `Saved with SEO score ${Math.round(data.seo.total)}`);
+      return true;
     } catch (err) {
       setErrorMessage(extractErrorMessage(err, 'Unable to save this draft.'));
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [id, title, metaDescription, primaryKeyword, secondaryKeywords, bodyHtml, images, linkedinText, instagramText]);
+
+  const handleSave = async () => {
+    setStatusMessage('');
+    await saveDraft();
   };
 
   const handleGenerateImages = async () => {
     if (!id || !imagePrompt.trim()) return;
+    if (imagePrompt.trim().length > IMAGE_PROMPT_MAX_LENGTH) {
+      setErrorMessage(`Image prompt must be ${IMAGE_PROMPT_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
     setImageLoading(true);
     setErrorMessage('');
     try {
+      const normalizedImageStyle = normalizeImageStyle(imageStyle);
       const payload: GenerateImagePayload = {
         prompt: imagePrompt,
         platform: imagePlatform,
         count: imageCount,
         role: imageRole,
-        altText: imageAlt
+        altText: imageAlt,
+        ...(normalizedImageStyle ? { style: normalizedImageStyle as ImageStylePreset } : {})
       };
       await ContentAPI.generateImages(id, payload);
       await loadImages();
@@ -332,6 +443,10 @@ export function ContentEditorPage() {
   const handlePublishNow = async () => {
     if (!id || !selectedIntegrationId) return;
     setErrorMessage('');
+    if (isDirty) {
+      const saved = await saveDraft({ successMessage: 'Draft saved. Publishing latest changes now.' });
+      if (!saved) return;
+    }
     if (selectedPlatform === 'INSTAGRAM' && !selectedInstagramImage) {
       setErrorMessage('Instagram requires selecting an image.');
       return;
@@ -358,12 +473,20 @@ export function ContentEditorPage() {
   const handleSchedule = async () => {
     if (!id || !selectedIntegrationId || !scheduledTime) return;
     setErrorMessage('');
+    if (isDirty) {
+      const saved = await saveDraft({ successMessage: 'Draft saved. Scheduling latest changes now.' });
+      if (!saved) return;
+    }
     if (selectedPlatform === 'INSTAGRAM' && !selectedInstagramImage) {
       setErrorMessage('Instagram requires selecting an image.');
       return;
     }
-    const picked = dayjs(scheduledTime);
-    if (!picked.isValid() || picked.isBefore(dayjs())) {
+    try {
+      if (!isFutureScheduledInput(scheduledTime, scheduleTimeZone)) {
+        setErrorMessage('Pick a future time for scheduling.');
+        return;
+      }
+    } catch {
       setErrorMessage('Pick a future time for scheduling.');
       return;
     }
@@ -417,6 +540,29 @@ export function ContentEditorPage() {
       return selectedInstagramImage === imageId;
     });
 
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (!saving) {
+          saveDraft();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveDraft, saving]);
+
   if (loading) {
     return (
       <div className="content-editor-page">
@@ -447,6 +593,9 @@ export function ContentEditorPage() {
           <p>Refine copy, review SEO, attach images, and publish.</p>
         </div>
         <div className="content-editor-actions">
+          <span className={`content-editor-sync ${isDirty ? 'is-dirty' : 'is-synced'}`}>
+            {isDirty ? 'Unsaved changes' : 'All changes saved'}
+          </span>
           <Button variant="ghost" onClick={() => navigate('/content')}>
             Back to drafts
           </Button>
@@ -465,11 +614,12 @@ export function ContentEditorPage() {
       <div className="content-editor-grid">
         <section className="content-editor-main glass-card">
           <div className="form-grid">
-            <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} {...textSurfaceProps} />
             <Input
               label="Primary keyword"
               value={primaryKeyword}
               onChange={(e) => setPrimaryKeyword(e.target.value)}
+              {...textSurfaceProps}
             />
           </div>
           <Textarea
@@ -477,12 +627,15 @@ export function ContentEditorPage() {
             value={metaDescription}
             onChange={(e) => setMetaDescription(e.target.value)}
             rows={2}
+            helperText={metaDescriptionHelperText}
+            {...textSurfaceProps}
           />
-          <Textarea
-            label="Body (HTML or markdown)"
+          <RichTextEditor
+            label="Body"
             value={bodyHtml}
-            onChange={(e) => setBodyHtml(e.target.value)}
-            rows={12}
+            onChange={setBodyHtml}
+            helperText="Write visually, preview the rendered article, or switch to raw HTML for precise control."
+            language={contentLanguage}
           />
           <Input
             label="Secondary keywords (comma separated)"
@@ -492,6 +645,7 @@ export function ContentEditorPage() {
               setSecondaryKeywordsInput(rawValue);
               setSecondaryKeywords(toSecondary(rawValue));
             }}
+            {...textSurfaceProps}
           />
           <div className="form-grid">
             <Textarea
@@ -499,17 +653,21 @@ export function ContentEditorPage() {
               rows={4}
               value={linkedinText}
               onChange={(e) => setLinkedinText(e.target.value)}
+              maxLength={LINKEDIN_POST_MAX_LENGTH}
+              helperText={linkedInHelperText}
+              {...textSurfaceProps}
             />
             <Textarea
               label="Instagram caption"
               rows={4}
               value={instagramText}
               onChange={(e) => setInstagramText(e.target.value)}
+              {...textSurfaceProps}
             />
           </div>
           <div className="content-editor-footer">
             <div className="content-editor-meta">
-              <FiClock /> Last updated {content ? new Date(content.updatedAt).toLocaleString() : '--'}
+              <FiClock /> Last updated {content ? new Date(content.updatedAt).toLocaleString() : '--'} • Ctrl/Cmd+S to save
             </div>
             <Button variant="secondary" onClick={handleSave} isLoading={saving}>
               Save changes
@@ -578,8 +736,17 @@ export function ContentEditorPage() {
                       value={imagePrompt}
                       onChange={(e) => setImagePrompt(e.target.value)}
                       placeholder="e.g. Futuristic workspace for SaaS team"
+                      maxLength={IMAGE_PROMPT_MAX_LENGTH}
+                      helperText={`${imagePrompt.length}/${IMAGE_PROMPT_MAX_LENGTH} characters`}
+                      {...textSurfaceProps}
                     />
                     <div className="form-grid">
+                      <Select
+                        label="Style"
+                        value={imageStyle}
+                        onChange={(e) => setImageStyle(e.target.value as ImageStylePreset)}
+                        options={IMAGE_STYLE_OPTIONS}
+                      />
                       <Select
                         label="Generate for"
                         value={imagePlatform}
@@ -595,6 +762,7 @@ export function ContentEditorPage() {
                         value={imageAlt}
                         onChange={(e) => setImageAlt(e.target.value)}
                         placeholder="Describe the image"
+                        {...textSurfaceProps}
                       />
                     </div>
                     <div className="form-grid">
@@ -729,7 +897,12 @@ export function ContentEditorPage() {
                   </div>
                   {latestJob && (
                     <p className="muted">
-                      {latestJob.platform} - {new Date(latestJob.scheduledTime).toLocaleString()}
+                      {latestJob.platform} -{' '}
+                      {formatScheduledDateTime(
+                        latestJob.scheduledTime,
+                        latestJob.scheduledTimezone || scheduleTimeZone
+                      )}{' '}
+                      ({latestJob.scheduledTimezone || scheduleTimeZone})
                     </p>
                   )}
                   <Button variant="ghost" onClick={() => navigate('/schedule')}>
@@ -767,6 +940,11 @@ export function ContentEditorPage() {
         )}
         {integrations.length > 0 && (
           <div className="publish-form">
+            {isDirty && (
+              <div className="content-editor-banner">
+                Unsaved edits will be saved automatically before publishing or scheduling.
+              </div>
+            )}
             <Select
               label="Integration"
               value={selectedIntegrationId}
@@ -786,11 +964,12 @@ export function ContentEditorPage() {
             />
             <Input
               type="datetime-local"
-              label="Schedule time"
+              label={`Schedule time (${scheduleTimeZone})`}
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
-              min={dayjs().add(5, 'minute').format('YYYY-MM-DDTHH:mm')}
+              min={formatDateTimeLocalMin(scheduleTimeZone, 5)}
             />
+            <p className="muted">Times are scheduled in {scheduleTimeZone}.</p>
           </div>
         )}
       </Modal>
@@ -805,4 +984,31 @@ async function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function buildEditorSnapshot(input: EditorSnapshot): EditorSnapshot {
+  return {
+    title: normalizeSnapshotText(input.title),
+    metaDescription: normalizeSnapshotText(input.metaDescription),
+    primaryKeyword: normalizeSnapshotText(input.primaryKeyword),
+    secondaryKeywords: [...(input.secondaryKeywords || [])].map(normalizeSnapshotText).filter(Boolean),
+    bodyHtml: normalizeHtmlSnapshot(input.bodyHtml),
+    linkedinText: normalizeSnapshotText(input.linkedinText),
+    instagramText: normalizeSnapshotText(input.instagramText)
+  };
+}
+
+function normalizeSnapshotText(value: string) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeHtmlSnapshot(value: string) {
+  return String(value || '').replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeLinkedInDraftText(value: string) {
+  const text = String(value || '').trim();
+  if (!text) return text;
+  if (text.length <= LINKEDIN_POST_MAX_LENGTH) return text;
+  return text.slice(0, LINKEDIN_POST_MAX_LENGTH).trimEnd();
 }

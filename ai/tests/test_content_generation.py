@@ -13,11 +13,15 @@ class TestContentGeneration:
         data = response.json()
         
         assert "contentForEditor" in data
+        assert "metrics" in data
         content = data["contentForEditor"]
+        metrics = data["metrics"]
         
         assert "html" in content
         assert "plainText" in content
         assert "structured" in content
+        assert metrics["grammarScore"] is not None
+        assert metrics["readabilityScore"] is not None
         
         # Validate HTML structure
         html = content["html"]

@@ -3,6 +3,8 @@ import { ContentService } from '../services/content.service.js';
 import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
+import { sanitizeContentHtml } from '../utils/html-content.js';
+import { LINKEDIN_POST_MAX_LENGTH } from '../constants/input-limits.js';
 
 export const SeoController = {
   async score(req, res, next) {
@@ -37,7 +39,7 @@ export const SeoController = {
         throw new ApiError(400, 'primaryKeyword is required for SEO scoring');
       }
 
-      const html = payload.body.bodyHtml || payload.body.html || owned.html || '';
+      const html = sanitizeContentHtml(payload.body.bodyHtml || payload.body.html || owned.html || '');
       const text = payload.body.text || owned.text || '';
       const linkedImages = await prisma.contentImageLink.findMany({
         where: { contentId },
@@ -62,7 +64,7 @@ export const SeoController = {
       if (payload.body.linkedinText || payload.body.instagramText) {
         const social = { ...(nextAiMeta.social || {}) };
         if (payload.body.linkedinText) {
-          social.linkedin = { ...(social.linkedin || {}), text: payload.body.linkedinText };
+          social.linkedin = { ...(social.linkedin || {}), text: clampLinkedInText(payload.body.linkedinText) };
         }
         if (payload.body.instagramText) {
           social.instagram = { ...(social.instagram || {}), text: payload.body.instagramText };
@@ -99,4 +101,11 @@ function cleanUndefined(obj) {
   return Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
   );
+}
+
+function clampLinkedInText(value) {
+  const text = String(value || '').trim();
+  if (!text) return text;
+  if (text.length <= LINKEDIN_POST_MAX_LENGTH) return text;
+  return text.slice(0, LINKEDIN_POST_MAX_LENGTH).trimEnd();
 }
