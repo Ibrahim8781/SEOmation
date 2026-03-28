@@ -28,7 +28,11 @@ export function SchedulePage() {
   };
 
   useEffect(() => {
-    void load();
+    const initializePage = async () => {
+      await load();
+    };
+
+    initializePage();
   }, []);
 
   const cancelJob = async (id: string) => {

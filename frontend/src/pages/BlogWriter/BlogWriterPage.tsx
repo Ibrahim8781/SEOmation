@@ -15,7 +15,7 @@ import { ScheduleAPI } from '@/api/schedule';
 import type { ContentImageLink, IntegrationPlatform, Language, PlatformIntegration, Topic } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
 import { LANGUAGE_OPTIONS } from '@/utils/constants';
-import { CONTENT_PROMPT_MAX_LENGTH, IMAGE_PROMPT_MAX_LENGTH } from '@/utils/inputLimits';
+import { CONTENT_PROMPT_MAX_LENGTH, IMAGE_PROMPT_MAX_LENGTH, LINKEDIN_POST_MAX_LENGTH } from '@/utils/inputLimits';
 import { IMAGE_STYLE_OPTIONS, normalizeImageStyle, type ImageStylePreset } from '@/utils/imageStyles';
 import { getTextSurfaceProps } from '@/utils/languagePresentation';
 import {
@@ -190,7 +190,11 @@ export function BlogWriterPage() {
   }, [generatedImages]);
 
   useEffect(() => {
-    void loadIntegrations();
+    const initializeIntegrations = async () => {
+      await loadIntegrations();
+    };
+
+    initializeIntegrations();
   }, []);
 
   const fetchImagesForContent = async (id: string) => {
@@ -307,7 +311,7 @@ export function BlogWriterPage() {
       setContentId(data.item.id);
       setGeneratedImages([]);
       if (includeImage || includeLinkedInImage || includeInstagramImage) {
-        void fetchImagesForContent(data.item.id);
+        fetchImagesForContent(data.item.id);
       } else {
         setImagesLoading(false);
       }
@@ -397,7 +401,7 @@ export function BlogWriterPage() {
     setPublishError(null);
     setPublishModalOpen(true);
     if (!integrations.length) {
-      void loadIntegrations();
+      loadIntegrations();
     }
   };
 
@@ -766,9 +770,19 @@ export function BlogWriterPage() {
                     }}
                   >
                     {linkedinCopy ? (
-                      <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
-                        {linkedinCopy}
-                      </p>
+                      <>
+                        <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
+                          {linkedinCopy}
+                        </p>
+                        <p className="muted">
+                          {linkedinCopy.trim().length}/{LINKEDIN_POST_MAX_LENGTH} characters
+                        </p>
+                        {linkedinCopy.trim().length > LINKEDIN_POST_MAX_LENGTH && (
+                          <div className="blog-writer-alert">
+                            This LinkedIn draft exceeds the platform limit. Open the draft editor and shorten it before publishing.
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="blog-writer-images__placeholder">
                         LinkedIn post was requested, but no post was returned for this run.

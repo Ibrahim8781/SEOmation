@@ -6,6 +6,7 @@ import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
 import logger from '../lib/logger.js';
+import { LINKEDIN_POST_MAX_LENGTH } from '../constants/input-limits.js';
 
 export const ContentController = {
   /**
@@ -128,7 +129,7 @@ export const ContentController = {
             aiResearchContext
           )
             .then((draft) => {
-              variantResults.linkedin = extractVariant(draft);
+              variantResults.linkedin = extractVariant(draft, 'LINKEDIN');
             })
             .catch((error) => {
               logger.warn({ contentId: saved.id, platform: 'LINKEDIN', error: error.message }, 'Content variant generation failed');
@@ -150,7 +151,7 @@ export const ContentController = {
             aiResearchContext
           )
             .then((draft) => {
-              variantResults.instagram = extractVariant(draft);
+              variantResults.instagram = extractVariant(draft, 'INSTAGRAM');
             })
             .catch((error) => {
               logger.warn({ contentId: saved.id, platform: 'INSTAGRAM', error: error.message }, 'Content variant generation failed');
@@ -385,14 +386,24 @@ function buildAiResearchContext(userId, language, user, profile) {
   };
 }
 
-function extractVariant(draft) {
+function extractVariant(draft, platform = 'BLOG') {
   if (!draft) return null;
+  const text = platform === 'LINKEDIN'
+    ? clampLinkedInText(draft.text)
+    : draft.text;
   return {
     html: draft.html,
-    text: draft.text,
+    text,
     structured: draft.structured ?? null,
     diagnostics: draft.aiMeta?.diagnostics ?? null
   };
+}
+
+function clampLinkedInText(value) {
+  const text = String(value || '').trim();
+  if (!text) return text;
+  if (text.length <= LINKEDIN_POST_MAX_LENGTH) return text;
+  return text.slice(0, LINKEDIN_POST_MAX_LENGTH).trimEnd();
 }
 
 async function buildSeoSummaryForContent(contentId, content, fallbackKeyword = '') {

@@ -21,7 +21,7 @@ import type {
   SeoSummary
 } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
-import { IMAGE_PROMPT_MAX_LENGTH } from '@/utils/inputLimits';
+import { IMAGE_PROMPT_MAX_LENGTH, LINKEDIN_POST_MAX_LENGTH } from '@/utils/inputLimits';
 import { IMAGE_STYLE_OPTIONS, normalizeImageStyle, type ImageStylePreset } from '@/utils/imageStyles';
 import { getTextSurfaceProps } from '@/utils/languagePresentation';
 import {
@@ -166,6 +166,16 @@ export function ContentEditorPage() {
     }
     return `${length} characters • Ideal length`;
   }, [metaDescription]);
+  const linkedInHelperText = useMemo(() => {
+    const length = linkedinText.trim().length;
+    if (!length) {
+      return `0/${LINKEDIN_POST_MAX_LENGTH} characters`;
+    }
+    if (length > LINKEDIN_POST_MAX_LENGTH) {
+      return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters • ${length - LINKEDIN_POST_MAX_LENGTH} over LinkedIn's limit`;
+    }
+    return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters`;
+  }, [linkedinText]);
 
   const load = async () => {
     if (!id) return;
@@ -180,7 +190,7 @@ export function ContentEditorPage() {
       const nextSecondaryKeywords = data.secondaryKeywords ?? [];
       const nextBodyHtml = data.html ?? data.text ?? '';
       const social = data.aiMeta?.social ?? {};
-      const nextLinkedinText = social.linkedin?.text || '';
+      const nextLinkedinText = normalizeLinkedInDraftText(social.linkedin?.text || '');
       const nextInstagramText = social.instagram?.text || '';
       setContent(data);
       setTitle(nextTitle);
@@ -277,10 +287,11 @@ export function ContentEditorPage() {
   };
 
   useEffect(() => {
-    void load();
-    void loadImages();
-    void loadIntegrations();
-    void loadJobs();
+    const initializePage = async () => {
+      await Promise.all([load(), loadImages(), loadIntegrations(), loadJobs()]);
+    };
+
+    initializePage();
   }, [id]);
 
   useEffect(() => {
@@ -544,7 +555,7 @@ export function ContentEditorPage() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         if (!saving) {
-          void saveDraft();
+          saveDraft();
         }
       }
     };
@@ -642,6 +653,8 @@ export function ContentEditorPage() {
               rows={4}
               value={linkedinText}
               onChange={(e) => setLinkedinText(e.target.value)}
+              maxLength={LINKEDIN_POST_MAX_LENGTH}
+              helperText={linkedInHelperText}
               {...textSurfaceProps}
             />
             <Textarea
@@ -991,4 +1004,11 @@ function normalizeSnapshotText(value: string) {
 
 function normalizeHtmlSnapshot(value: string) {
   return String(value || '').replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeLinkedInDraftText(value: string) {
+  const text = String(value || '').trim();
+  if (!text) return text;
+  if (text.length <= LINKEDIN_POST_MAX_LENGTH) return text;
+  return text.slice(0, LINKEDIN_POST_MAX_LENGTH).trimEnd();
 }

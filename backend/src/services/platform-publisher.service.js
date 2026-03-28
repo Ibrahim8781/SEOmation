@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import logger from '../lib/logger.js';
 import { prepareIntegrationForPublish } from './integration-auth.service.js';
 import { sanitizeContentHtml } from '../utils/html-content.js';
+import { LINKEDIN_POST_MAX_LENGTH } from '../constants/input-limits.js';
 
 export const SUPPORTED_PLATFORMS = ['WORDPRESS', 'LINKEDIN', 'INSTAGRAM'];
 
@@ -241,9 +242,14 @@ function detectUploadMimeType(mediaUrl) {
 
 async function publishLinkedIn(content, integration, media) {
   const socialText = content.aiMeta?.social?.linkedin?.text;
-  const text = socialText || content.text || stripTags(content.html || '');
+  const text = String(socialText || content.text || stripTags(content.html || '')).trim();
   if (!integration.accessToken) {
     throw new Error('LinkedIn access token missing; connect LinkedIn integration.');
+  }
+  if (text.length > LINKEDIN_POST_MAX_LENGTH) {
+    throw new Error(
+      `LinkedIn post exceeds the ${LINKEDIN_POST_MAX_LENGTH}-character limit. Edit the draft before publishing.`
+    );
   }
   const meta = integration.metadata || {};
   let authorUrn =

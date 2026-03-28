@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LINKEDIN_POST_MAX_LENGTH } from '../constants/input-limits.js';
 
 const statusEnum = z.enum(['DRAFT', 'READY', 'PUBLISHED', 'ARCHIVED']);
 
@@ -31,7 +32,7 @@ export const saveDraftWithSeoSchema = z.object({
       focusKeyword: z.string().min(2).optional(),
       secondaryKeywords: z.array(z.string().min(2)).optional(),
       images: z.array(imageInput).optional(),
-      linkedinText: z.string().optional(),
+      linkedinText: z.string().max(LINKEDIN_POST_MAX_LENGTH).optional(),
       instagramText: z.string().optional(),
       status: statusEnum.optional()
     })

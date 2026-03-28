@@ -27,7 +27,11 @@ export function ContentListPage() {
   };
 
   useEffect(() => {
-    void load();
+    const initializePage = async () => {
+      await load();
+    };
+
+    initializePage();
   }, []);
 
   return (

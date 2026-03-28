@@ -196,7 +196,7 @@ export function DashboardPage() {
       !attemptedAutoGenerate
     ) {
       setAttemptedAutoGenerate(true);
-      void generateTopics();
+      generateTopics();
     }
   }, [loading, businessProfile, topics.length, generatingTopics, attemptedAutoGenerate, generateTopics]);
 
@@ -315,7 +315,7 @@ export function DashboardPage() {
               disabled={generatingTopics}
               onClick={() => {
                 setAttemptedAutoGenerate(true);
-                void generateTopics();
+                generateTopics();
               }}
             >
               {generatingTopics ? 'Refreshing…' : 'Refresh topics'}

@@ -152,7 +152,11 @@ export function IntegrationsPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const initializePage = async () => {
+      await load();
+    };
+
+    initializePage();
   }, [load]);
 
   useEffect(() => {
@@ -166,7 +170,7 @@ export function IntegrationsPage() {
 
     if (integrationStatus === 'success') {
       setStatus(message || `${formatPlatformLabel(platform)} connected successfully.`);
-      void load({ background: true });
+      load({ background: true });
     } else {
       setError(message || `Unable to connect ${formatPlatformLabel(platform)}.`);
     }
@@ -203,6 +207,10 @@ export function IntegrationsPage() {
     }
   };
 
+  const handleRefresh = () => {
+    load();
+  };
+
   return (
     <div className="integrations-page">
       <header className="integrations-header">
@@ -210,7 +218,7 @@ export function IntegrationsPage() {
           <h1>Integrations</h1>
           <p>Connect your publishing platforms to schedule or publish directly.</p>
         </div>
-        <Button variant="ghost" leftIcon={<FiRefreshCw />} onClick={() => void load()} isLoading={loading}>
+        <Button variant="ghost" leftIcon={<FiRefreshCw />} onClick={handleRefresh} isLoading={loading}>
           Refresh
         </Button>
       </header>
