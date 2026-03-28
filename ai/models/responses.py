@@ -10,13 +10,15 @@ class TopicSuggestResponse(BaseModel):
     ideas: List[Dict[str, Any]]
     diagnostics: Dict[str, Any]
 
+class ContentMetrics(BaseModel):
+    grammarScore: Optional[float] = None
+    readabilityScore: Optional[float] = None
+    ragScore: Optional[float] = None
+
 class ContentGenerateResponse(BaseModel):
     contentForEditor: Dict[str, Any]  # includes html + plain for all platforms
     diagnostics: Dict[str, Any]
-
-class SeoHintResponse(BaseModel):
-    score: int
-    hints: List[Dict[str, str]]
+    metrics: Optional[ContentMetrics] = None
 
 class GeneratedImage(BaseModel):
     url: str

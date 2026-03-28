@@ -1,0 +1,2 @@
+export const CONTENT_PROMPT_MAX_LENGTH = 4000;
+export const IMAGE_PROMPT_MAX_LENGTH = 1000;

@@ -5,6 +5,7 @@ import { SeoService } from '../services/seo.service.js';
 import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
+import logger from '../lib/logger.js';
 
 export const ContentController = {
   /**
@@ -72,6 +73,7 @@ export const ContentController = {
       }
 
       const imagePrompt = payload.imagePrompt || topicTitle || focusKeyword || prompt || '';
+      const imageStyle = payload.imageStyle || undefined;
       const aiResearchContext = buildAiResearchContext(userId, language, req.user, profile);
 
       const blogDraft = await FastAPIService.generateContent(
@@ -100,11 +102,12 @@ export const ContentController = {
         try {
           await ImageService.generateAndAttach(saved.id, userId, {
             prompt: imagePrompt,
+            style: imageStyle,
             count: 1,
             role: 'featured'
           });
         } catch (imgErr) {
-          console.warn('[Image] Blog image generation failed', imgErr.message);
+          logger.warn({ contentId: saved.id, platform: 'BLOG', error: imgErr.message }, 'Image generation failed');
         }
       }
 
@@ -128,7 +131,7 @@ export const ContentController = {
               variantResults.linkedin = extractVariant(draft);
             })
             .catch((error) => {
-              console.warn('[FastAPI] LinkedIn variant failed', error.message);
+              logger.warn({ contentId: saved.id, platform: 'LINKEDIN', error: error.message }, 'Content variant generation failed');
             })
         );
       }
@@ -150,7 +153,7 @@ export const ContentController = {
               variantResults.instagram = extractVariant(draft);
             })
             .catch((error) => {
-              console.warn('[FastAPI] Instagram variant failed', error.message);
+              logger.warn({ contentId: saved.id, platform: 'INSTAGRAM', error: error.message }, 'Content variant generation failed');
             })
         );
       }
@@ -180,11 +183,12 @@ export const ContentController = {
         try {
           await ImageService.generateAndAttach(saved.id, userId, {
             prompt: imagePrompt,
+            style: imageStyle,
             count: 1,
             role: 'thumbnail'
           });
         } catch (e) {
-          console.warn('[Image] LinkedIn image generation failed', e.message);
+          logger.warn({ contentId: saved.id, platform: 'LINKEDIN', error: e.message }, 'Image generation failed');
         }
       }
 
@@ -192,11 +196,12 @@ export const ContentController = {
         try {
           await ImageService.generateAndAttach(saved.id, userId, {
             prompt: imagePrompt,
+            style: imageStyle,
             count: 1,
             role: 'instagram_main'
           });
         } catch (e) {
-          console.warn('[Image] Instagram image generation failed', e.message);
+          logger.warn({ contentId: saved.id, platform: 'INSTAGRAM', error: e.message }, 'Image generation failed');
         }
       }
 
@@ -295,13 +300,13 @@ export const ContentController = {
         throw new ApiError(400, 'focusKeyword is required');
       }
 
-      // Call FastAPI SEO service
-      const seoResult = await FastAPIService.getSeoHints(
-        content.platform,
-        content.language,
-        focusKeyword,
-        content.html || content.text
-      );
+      const seoSummary = await buildSeoSummaryForContent(contentId, content, focusKeyword);
+      const seoResult = {
+        score: Math.round(seoSummary.total ?? 0),
+        hints: seoSummary.components
+          .filter((component) => component.severity !== 'ok')
+          .map((component) => ({ type: component.id, msg: component.message }))
+      };
 
       res.json({
         contentId,

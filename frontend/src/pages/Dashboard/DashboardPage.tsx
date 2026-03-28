@@ -16,6 +16,7 @@ import { TopicCard } from '@/components/dashboard/TopicCard';
 import { WriterCard } from '@/components/dashboard/WriterCard';
 import { FullScreenLoader } from '@/components/common/FullScreenLoader';
 import { Button } from '@/components/ui/Button';
+import { formatScheduledDateKey } from '@/utils/scheduleTime';
 import './dashboard.css';
 
 const numberFormatter = Intl.NumberFormat('en-US', {
@@ -218,8 +219,8 @@ export function DashboardPage() {
     () =>
       jobs
         .filter((job) => job.scheduledTime)
-        .map((job) => dayjs(job.scheduledTime).format('YYYY-MM-DD')),
-    [jobs]
+        .map((job) => formatScheduledDateKey(job.scheduledTime, job.scheduledTimezone || user?.timezone)),
+    [jobs, user?.timezone]
   );
 
   const suggestedTopics = useMemo(() => {

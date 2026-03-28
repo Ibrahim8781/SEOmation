@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
-from routers import topics, content, seo, image
+from routers import topics, content, image
 from config import settings
 
 
@@ -45,5 +45,4 @@ async def log_startup_configuration():
 
 app.include_router(topics.router, prefix="/topic", tags=["topic"])
 app.include_router(content.router, prefix="/content", tags=["content"])
-app.include_router(seo.router, prefix="/seo", tags=["seo"])
 app.include_router(image.router, prefix="/image", tags=["image"])

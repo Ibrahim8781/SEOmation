@@ -2,6 +2,7 @@ import ApiError from '../utils/ApiError.js';
 import { prisma } from '../lib/prisma.js';
 import FastAPIService from './fastapi.service.js';
 import { AssetStorageService } from './asset-storage.service.js';
+import { sanitizeContentRecord } from '../utils/html-content.js';
 
 async function assertOwnedContent(contentId, userId) {
   const content = await prisma.content.findUnique({ where: { id: contentId } });
@@ -60,9 +61,85 @@ function normalizeUrl(image) {
   return null;
 }
 
+const MAX_SECONDARY_KEYWORD_HINTS = 12;
+const ALT_KEYWORD_STOPWORDS = new Set([
+  'about',
+  'after',
+  'before',
+  'being',
+  'between',
+  'could',
+  'during',
+  'every',
+  'from',
+  'into',
+  'other',
+  'their',
+  'there',
+  'these',
+  'those',
+  'through',
+  'using',
+  'where',
+  'which',
+  'while',
+  'whose',
+  'would',
+  'image',
+  'images',
+  'photo',
+  'photos',
+  'picture',
+  'pictures',
+  'graphic',
+  'graphics',
+  'illustration',
+  'illustrations',
+  'artwork',
+  'design',
+  'background',
+  'banner',
+  'poster',
+  'cover',
+  'scene'
+]);
+
 function safeSecondaryKeywords(value) {
-  if (Array.isArray(value)) return value;
+  if (Array.isArray(value)) return value.filter((item) => typeof item === 'string');
   return [];
+}
+
+function extractKeywordHintsFromAltText(altText) {
+  const tokens = String(altText || '').match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || [];
+
+  return tokens
+    .map((token) => token.replace(/^[-']+|[-']+$/g, '').toLowerCase())
+    .filter((token) => token.length >= 5)
+    .filter((token) => /[\p{L}]/u.test(token))
+    .filter((token) => !/^\d+$/.test(token))
+    .filter((token) => !ALT_KEYWORD_STOPWORDS.has(token));
+}
+
+function mergeSecondaryKeywords(existingKeywords, newKeywords) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const keyword of [...existingKeywords, ...newKeywords]) {
+    const normalized = String(keyword || '').trim();
+    if (!normalized) continue;
+
+    const dedupeKey = normalized.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+
+    seen.add(dedupeKey);
+    merged.push(normalized);
+
+    if (merged.length >= MAX_SECONDARY_KEYWORD_HINTS) {
+      break;
+    }
+  }
+
+  return merged;
 }
 
 async function persistStoredAsset({ userId, sourceUrl, dataUrl, aiMeta, format }) {
@@ -207,7 +284,7 @@ export const ImageService = {
     }
 
     await this._persistKeywordHintsFromAlt(contentId, userId, aiResponse.altText || payload.prompt);
-    return { content, results };
+    return { content: sanitizeContentRecord(content), results };
   },
 
   async _persistKeywordHintsFromAlt(contentId, userId, altText) {
@@ -216,11 +293,10 @@ export const ImageService = {
     if (!owned || owned.userId !== userId) return;
 
     const existingSecondary = safeSecondaryKeywords(owned.secondaryKeywords);
-    const words = altText
-      .split(/\s+/)
-      .map((w) => w.trim())
-      .filter((w) => w.length > 4);
-    const merged = Array.from(new Set([...existingSecondary, ...words])).slice(0, 12);
+    const extractedKeywords = extractKeywordHintsFromAltText(altText);
+    if (extractedKeywords.length === 0) return;
+
+    const merged = mergeSecondaryKeywords(existingSecondary, extractedKeywords);
 
     await prisma.content.update({
       where: { id: contentId },

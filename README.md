@@ -82,6 +82,10 @@ Optional but supported:
 AI_MOCK=false
 APP_BASE_URL=http://localhost:3000
 INTEGRATION_CALLBACK_BASE=http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+INTEGRATION_TOKEN_ENCRYPTION_KEY=replace-with-a-random-32+-char-secret
+INTEGRATION_STATE_SECRET=replace-with-a-separate-random-secret
+INTEGRATION_STATE_TTL_SECONDS=900
 PUBLIC_ASSET_BASE_URL=http://localhost:3000
 ASSET_PUBLIC_PATH=/media
 ASSET_STORAGE_DIR=
@@ -90,6 +94,10 @@ AI_CONTENT_TIMEOUT_MS=360000
 AI_IMAGE_TIMEOUT_MS=450000
 AI_SEO_TIMEOUT_MS=30000
 ```
+
+`INTEGRATION_TOKEN_ENCRYPTION_KEY` is required for secure OAuth token storage. Use a strong random secret with at least 32 characters, a 64-character hex key, or `base64:<32-byte-key>`.
+`INTEGRATION_STATE_SECRET` secures OAuth callback state so integrations cannot be rebound with forged callback URLs. If omitted, the backend falls back to `JWT_ACCESS_SECRET`, but a separate secret is better.
+`CORS_ALLOWED_ORIGINS` should list the exact browser origins allowed to call the backend API. Do not use `*` and do not reflect arbitrary origins when auth headers or browser credentials are involved.
 
 ### `ai/.env`
 
@@ -165,6 +173,7 @@ DATABASE_URL="postgresql://postgres:<password>@127.0.0.1:5432/seomation_test?sch
 - Content generation uses live research first and only uses indexed RAG when the topic matches the user's niche.
 - Draft SEO scoring is backend-driven and stays aligned with saved draft fields.
 - Generated images are persisted by the backend and served from `/media/...`.
+- Scheduled publishing is stored in UTC but created and displayed using each job's saved IANA timezone.
 - Publishing and scheduling are handled by the backend service layer.
 
 ## Important repo notes

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { FiCheck, FiChevronDown, FiCopy, FiEdit3, FiSend, FiX } from 'react-icons/fi';
@@ -13,8 +12,17 @@ import { useOnboarding } from '@/hooks/useOnboarding';
 import { ContentAPI, type GenerateContentPayload, type SeoHint } from '@/api/content';
 import { IntegrationsAPI } from '@/api/integrations';
 import { ScheduleAPI } from '@/api/schedule';
-import type { ContentImageLink, IntegrationPlatform, PlatformIntegration, Topic } from '@/types';
+import type { ContentImageLink, IntegrationPlatform, Language, PlatformIntegration, Topic } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
+import { LANGUAGE_OPTIONS } from '@/utils/constants';
+import { CONTENT_PROMPT_MAX_LENGTH, IMAGE_PROMPT_MAX_LENGTH } from '@/utils/inputLimits';
+import { IMAGE_STYLE_OPTIONS, normalizeImageStyle, type ImageStylePreset } from '@/utils/imageStyles';
+import { getTextSurfaceProps } from '@/utils/languagePresentation';
+import {
+  formatDateTimeLocalMin,
+  isFutureScheduledInput,
+  resolveScheduleTimeZone
+} from '@/utils/scheduleTime';
 import './blogWriter.css';
 
 type ChatMessage = {
@@ -36,11 +44,6 @@ type ImageAiMeta = {
   errors?: Array<{ provider?: string; error?: string }>;
   isPlaceholder?: boolean;
 };
-
-const languageOptions = [
-  { label: 'English', value: 'EN' },
-  { label: 'German', value: 'DE' }
-];
 
 const platformOptions: { label: string; value: IntegrationPlatform }[] = [
   { label: 'WordPress', value: 'WORDPRESS' },
@@ -77,6 +80,7 @@ export function BlogWriterPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { businessProfile } = useOnboarding();
+  const scheduleTimeZone = resolveScheduleTimeZone(user?.timezone);
   const initialTopic = (location.state as { topic?: Topic } | undefined)?.topic ?? null;
 
   const welcomeMessage = useMemo(() => {
@@ -88,8 +92,8 @@ export function BlogWriterPage() {
   }, [businessProfile]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('html');
-  const [language, setLanguage] = useState<'EN' | 'DE'>(
-    (initialTopic?.language as 'EN' | 'DE' | undefined) ??
+  const [language, setLanguage] = useState<Language>(
+    initialTopic?.language ??
       businessProfile?.language ??
       user?.language ??
       'EN'
@@ -118,6 +122,7 @@ export function BlogWriterPage() {
   const [includeLinkedInImage, setIncludeLinkedInImage] = useState(false);
   const [includeInstagramImage, setIncludeInstagramImage] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
+  const [imageStyle, setImageStyle] = useState<ImageStylePreset>('auto');
   const [seoScore, setSeoScore] = useState<number | null>(null);
   const [seoHints, setSeoHints] = useState<SeoHint[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -146,6 +151,8 @@ export function BlogWriterPage() {
   const panelBodyRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const copyResetTimer = useRef<number | null>(null);
   const previousTopicIdRef = useRef<string | null>(initialTopic?.id ?? null);
+  const textSurfaceProps = useMemo(() => getTextSurfaceProps(language), [language]);
+  const codeSurfaceProps = useMemo(() => getTextSurfaceProps(language, { code: true }), [language]);
 
   useEffect(() => {
     return () => {
@@ -232,8 +239,18 @@ export function BlogWriterPage() {
       return;
     }
 
+    if (trimmedPrompt.length > CONTENT_PROMPT_MAX_LENGTH) {
+      setFormError(`Prompt must be ${CONTENT_PROMPT_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
     if (!trimmedKeyword) {
       setFormError('Provide a focus keyword so the draft can optimise around it.');
+      return;
+    }
+
+    if (imagePrompt.trim().length > IMAGE_PROMPT_MAX_LENGTH) {
+      setFormError(`Image prompt must be ${IMAGE_PROMPT_MAX_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -262,6 +279,7 @@ export function BlogWriterPage() {
       images: includeImage || includeLinkedInImage || includeInstagramImage
     });
 
+    const normalizedImageStyle = normalizeImageStyle(imageStyle);
     const payload: GenerateContentPayload = {
       platform: 'BLOG',
       language,
@@ -272,6 +290,9 @@ export function BlogWriterPage() {
       includeInstagramImage,
       imagePrompt: imagePrompt || selectedTopic?.title || trimmedPrompt || focusKeyword
     };
+    if (normalizedImageStyle) {
+      payload.imageStyle = normalizedImageStyle as ImageStylePreset;
+    }
 
     if (selectedTopic) {
       payload.topicId = selectedTopic.id;
@@ -292,7 +313,7 @@ export function BlogWriterPage() {
       }
       setBlogHtml(data.item.html ?? '');
       setBlogPlain(data.item.text ?? '');
-      setLanguage(data.item.language as 'EN' | 'DE');
+      setLanguage(data.item.language as Language);
       setSeoScore(data.seo?.score ?? null);
       setSeoHints(data.seo?.hints ?? []);
       setInstagramCopy(includeInstagram ? variants.instagram?.text ?? '' : '');
@@ -417,8 +438,12 @@ export function BlogWriterPage() {
       setPublishError('Pick a time to schedule.');
       return;
     }
-    const picked = dayjs(scheduledTime);
-    if (!picked.isValid() || picked.isBefore(dayjs())) {
+    try {
+      if (!isFutureScheduledInput(scheduledTime, scheduleTimeZone)) {
+        setPublishError('Pick a future time for scheduling.');
+        return;
+      }
+    } catch {
       setPublishError('Pick a future time for scheduling.');
       return;
     }
@@ -507,8 +532,8 @@ export function BlogWriterPage() {
           <Select
             label="Language"
             value={language}
-            onChange={(event) => setLanguage(event.target.value as 'EN' | 'DE')}
-            options={languageOptions}
+            onChange={(event) => setLanguage(event.target.value as Language)}
+            options={LANGUAGE_OPTIONS}
           />
           <Button
             type="button"
@@ -624,9 +649,13 @@ export function BlogWriterPage() {
                     </span>
                   </div>
 
-                  {viewMode === 'html' && <pre className="blog-writer-output__code">{blogHtml}</pre>}
+                  {viewMode === 'html' && (
+                    <pre className="blog-writer-output__code text-surface" {...codeSurfaceProps}>
+                      {blogHtml}
+                    </pre>
+                  )}
                   {viewMode === 'plain' && (
-                    <article className="blog-writer-output__article">
+                    <article className="blog-writer-output__article text-surface" {...textSurfaceProps}>
                       {blogPlain.split('\n\n').map((paragraph, index) => (
                         <p key={index}>{paragraph}</p>
                       ))}
@@ -680,7 +709,9 @@ export function BlogWriterPage() {
                     }}
                   >
                     {instagramCopy ? (
-                      <p className="blog-writer-snippet__text">{instagramCopy}</p>
+                      <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
+                        {instagramCopy}
+                      </p>
                     ) : (
                       <div className="blog-writer-images__placeholder">
                         Instagram caption was requested, but no caption was returned for this run.
@@ -735,7 +766,9 @@ export function BlogWriterPage() {
                     }}
                   >
                     {linkedinCopy ? (
-                      <p className="blog-writer-snippet__text">{linkedinCopy}</p>
+                      <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
+                        {linkedinCopy}
+                      </p>
                     ) : (
                       <div className="blog-writer-images__placeholder">
                         LinkedIn post was requested, but no post was returned for this run.
@@ -861,6 +894,7 @@ export function BlogWriterPage() {
                 if (formError) setFormError(null);
               }}
               placeholder="e.g. SaaS onboarding checklist"
+              {...textSurfaceProps}
             />
             {!selectedTopic && (
               <Textarea
@@ -872,6 +906,9 @@ export function BlogWriterPage() {
                 }}
                 placeholder="Describe the blog you need, tone, and audience..."
                 rows={3}
+                maxLength={CONTENT_PROMPT_MAX_LENGTH}
+                helperText={`${prompt.length}/${CONTENT_PROMPT_MAX_LENGTH} characters`}
+                {...textSurfaceProps}
               />
             )}
             {formError && <p className="blog-writer-chat__error">{formError}</p>}
@@ -931,6 +968,15 @@ export function BlogWriterPage() {
                 value={imagePrompt}
                 onChange={(e) => setImagePrompt(e.target.value)}
                 placeholder="Optional image direction"
+                maxLength={IMAGE_PROMPT_MAX_LENGTH}
+                helperText={`${imagePrompt.length}/${IMAGE_PROMPT_MAX_LENGTH} characters`}
+                {...textSurfaceProps}
+              />
+              <Select
+                label="Image style"
+                value={imageStyle}
+                onChange={(e) => setImageStyle(e.target.value as ImageStylePreset)}
+                options={IMAGE_STYLE_OPTIONS}
               />
             </div>
 
@@ -994,11 +1040,12 @@ export function BlogWriterPage() {
             />
             <Input
               type="datetime-local"
-              label="Schedule time"
+              label={`Schedule time (${scheduleTimeZone})`}
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
-              min={dayjs().add(5, 'minute').format('YYYY-MM-DDTHH:mm')}
+              min={formatDateTimeLocalMin(scheduleTimeZone, 5)}
             />
+            <p className="blog-writer-publish-hint">Times are scheduled in {scheduleTimeZone}.</p>
             <label className="blog-writer-checkbox blog-writer-checkbox--spaced">
               <input
                 type="checkbox"

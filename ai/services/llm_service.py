@@ -19,6 +19,7 @@ from services.render_service import (
     linkedin_to_html, linkedin_to_plain,
     instagram_to_html, instagram_to_plain
 )
+from services.text_quality_service import score_content_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -419,6 +420,7 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
         "liveSources": (retrieved_context or {}).get("liveSources", 0),
         "indexedSources": (retrieved_context or {}).get("indexedSources", 0)
     }
+    metrics = score_content_metrics(packaged.get("html", ""), plain, language)
     
     logger.info(
         "llm_content_complete provider=%s model=%s platform=%s length=%s repair=%s",
@@ -429,7 +431,7 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
         bool(issues),
     )
     
-    return packaged, diagnostics
+    return packaged, diagnostics, metrics
 
 
 def _validate_blog(json_obj: Dict[str, Any], focus_kw: str, target_length: int) -> List[str]:

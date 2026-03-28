@@ -11,5 +11,6 @@
 ```bash
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-pgvector.txt   # only if using VECTOR_BACKEND=pgvector or EMBEDDER=sbert
 copy .env.example .env   # set your keys (GROQ, COHERE; optional SERPER, QDRANT)
 uvicorn main:app --host 0.0.0.0 --port 8001 --reload

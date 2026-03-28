@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
-import type { Platform } from '@/types';
+import type { Language, Platform } from '@/types';
 import {
   PLATFORM_OPTIONS,
   LANGUAGE_OPTIONS,
@@ -42,7 +42,7 @@ export function OnboardingPage() {
       niche: user?.niche ?? '',
       primaryPlatforms: ['BLOG'],
       timezone: user?.timezone ?? TIMEZONE_OPTIONS[0],
-      language: (user?.language ?? 'EN') as 'EN' | 'DE',
+      language: (user?.language ?? 'EN') as Language,
       contentGoals: '',
       toneOfVoice: 'Professional',
       targetAudience: '',

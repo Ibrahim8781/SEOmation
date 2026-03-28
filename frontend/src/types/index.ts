@@ -1,5 +1,5 @@
 export type Role = 'USER' | 'ADMIN';
-export type Language = 'EN' | 'DE';
+export type Language = import('@/utils/languages').SupportedLanguage;
 export type Platform = 'BLOG' | 'LINKEDIN' | 'INSTAGRAM';
 export type IntegrationPlatform = 'WORDPRESS' | 'LINKEDIN' | 'INSTAGRAM';
 export type TopicStatus = 'SUGGESTED' | 'ACCEPTED' | 'REJECTED';
@@ -88,6 +88,13 @@ export interface ContentVariant {
   diagnostics?: unknown;
 }
 
+export interface ContentSeoMeta {
+  keywords?: string[];
+  focusKeyword?: string | null;
+  slug?: string | null;
+  [key: string]: unknown;
+}
+
 export interface ContentAiMeta {
   diagnostics?: unknown;
   contentStructure?: unknown;
@@ -107,7 +114,7 @@ export interface ContentItem {
   metaDescription?: string | null;
   primaryKeyword?: string | null;
   secondaryKeywords?: string[];
-  seoMeta: Record<string, unknown> | null;
+  seoMeta: ContentSeoMeta | null;
   seoSummary?: SeoSummary | null;
   grammarScore: number | null;
   readabilityScore: number | null;
@@ -193,6 +200,7 @@ export interface ScheduleJob {
   integrationId: string;
   platform: IntegrationPlatform;
   scheduledTime: string;
+  scheduledTimezone: string;
   status: ScheduleStatus;
   attempts: number;
   lastError?: string | null;

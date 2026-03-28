@@ -3,6 +3,7 @@ import { ContentService } from '../services/content.service.js';
 import ApiError from '../utils/ApiError.js';
 import { HTTP } from '../utils/httpStatus.js';
 import { prisma } from '../lib/prisma.js';
+import { sanitizeContentHtml } from '../utils/html-content.js';
 
 export const SeoController = {
   async score(req, res, next) {
@@ -37,7 +38,7 @@ export const SeoController = {
         throw new ApiError(400, 'primaryKeyword is required for SEO scoring');
       }
 
-      const html = payload.body.bodyHtml || payload.body.html || owned.html || '';
+      const html = sanitizeContentHtml(payload.body.bodyHtml || payload.body.html || owned.html || '');
       const text = payload.body.text || owned.text || '';
       const linkedImages = await prisma.contentImageLink.findMany({
         where: { contentId },

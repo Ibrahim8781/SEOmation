@@ -23,7 +23,7 @@ class ContentGenerateRequest(BaseModel):
     userId: str
     platform: str  # blog | linkedin | instagram
     language: str = "en"
-    topicOrIdea: str = Field(min_length=4)
+    topicOrIdea: str = Field(min_length=4, max_length=4000)
     tone: str = "friendly"
     targetLength: int = 1200
     focusKeyword: str = Field(min_length=2)
@@ -36,14 +36,8 @@ class ContentGenerateRequest(BaseModel):
     persona: Optional[Persona] = None
     namespace: Optional[str] = None
 
-class SeoHintRequest(BaseModel):
-    platform: str
-    language: str
-    focusKeyword: str
-    content: str
-
 class ImageGenerateRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=3, max_length=1000)
     platform: Optional[str] = None
     style: Optional[str] = None
     sizes: List[str] = []

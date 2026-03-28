@@ -1,5 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import logger from '../lib/logger.js';
+import { prepareIntegrationForPublish } from './integration-auth.service.js';
+import { sanitizeContentHtml } from '../utils/html-content.js';
 
 export const SUPPORTED_PLATFORMS = ['WORDPRESS', 'LINKEDIN', 'INSTAGRAM'];
 
@@ -164,7 +166,7 @@ async function publishWordPress(content, integration, media) {
   const mediaEndpoint = `${baseEndpoint}/media`;
   const body = {
     title: content.title,
-    content: content.html || content.text || '',
+    content: sanitizeContentHtml(content.html || content.text || ''),
     status: 'publish'
   };
 
@@ -450,7 +452,9 @@ export async function publishToPlatform(job) {
     throw new Error(`Unsupported platform ${platform}`);
   }
 
-  if (platform === 'WORDPRESS') return publishWordPress(content, integration, job.media);
-  if (platform === 'LINKEDIN') return publishLinkedIn(content, integration, job.media);
-  return publishInstagram(content, integration, job.media);
+  const preparedIntegration = await prepareIntegrationForPublish(integration);
+
+  if (platform === 'WORDPRESS') return publishWordPress(content, preparedIntegration, job.media);
+  if (platform === 'LINKEDIN') return publishLinkedIn(content, preparedIntegration, job.media);
+  return publishInstagram(content, preparedIntegration, job.media);
 }

@@ -28,6 +28,33 @@ function formatPlatformLabel(platform: IntegrationPlatform) {
   return providers.find((provider) => provider.value === platform)?.label ?? platform;
 }
 
+function getExpiryNotice(expiresAt?: string | null) {
+  if (!expiresAt) return null;
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return {
+      severity: 'error' as const,
+      text: 'Token expired — reconnect required'
+    };
+  }
+
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays <= 7) {
+    return {
+      severity: 'warn' as const,
+      text: `Token expires in ${diffDays} day${diffDays === 1 ? '' : 's'}`
+    };
+  }
+
+  return {
+    severity: 'info' as const,
+    text: `Expires ${date.toLocaleDateString()}`
+  };
+}
+
 function formatConnectionTitle(integration: PlatformIntegration) {
   const metadata = readRecord(integration.metadata);
 
@@ -91,8 +118,9 @@ function formatConnectionDetails(integration: PlatformIntegration) {
 
   details.push(`Updated ${new Date(integration.updatedAt).toLocaleString()}`);
 
-  if (integration.expiresAt) {
-    details.push(`Expires ${new Date(integration.expiresAt).toLocaleDateString()}`);
+  const expiryNotice = getExpiryNotice(integration.expiresAt);
+  if (expiryNotice) {
+    details.push(expiryNotice.text);
   }
 
   return details;

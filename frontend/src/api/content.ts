@@ -7,6 +7,7 @@ import type {
   SeoSummary
 } from '@/types';
 import { getApiClient } from './client';
+import type { ImageStylePreset } from '@/utils/imageStyles';
 
 const api = getApiClient();
 
@@ -22,6 +23,7 @@ export interface GenerateContentPayload {
   includeLinkedInImage?: boolean;
   includeInstagramImage?: boolean;
   imagePrompt?: string;
+  imageStyle?: ImageStylePreset;
   targetLength?: number;
   tone?: string;
 }
@@ -112,7 +114,7 @@ export interface SaveDraftPayload {
 export interface GenerateImagePayload {
   prompt: string;
   platform?: 'blog' | 'linkedin' | 'instagram';
-  style?: string;
+  style?: ImageStylePreset;
   sizes?: string[];
   count?: number;
   role?: string;

@@ -91,7 +91,13 @@ def _pg_engine():
         return None
     if _engine is not None:
         return _engine
-    from sqlalchemy import create_engine, text
+    try:
+        from sqlalchemy import create_engine, text
+    except ImportError as exc:
+        raise RuntimeError(
+            "SQLAlchemy is required when VECTOR_BACKEND=pgvector. "
+            "Install the optional pgvector dependencies from requirements-pgvector.txt."
+        ) from exc
     _engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, future=True)
     _engine_sql = text
     with _engine.begin() as conn:

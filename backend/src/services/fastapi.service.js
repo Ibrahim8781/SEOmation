@@ -1,11 +1,11 @@
 import { config } from '../config/index.js';
 import ApiError from '../utils/ApiError.js';
+import logger from '../lib/logger.js';
 
 const ENDPOINT_TIMEOUTS = {
     '/topic/suggest': config.ai.timeouts.topicsMs,
     '/content/generate': config.ai.timeouts.contentMs,
-    '/image/generate': config.ai.timeouts.imageMs,
-    '/seo/hints': config.ai.timeouts.seoMs
+    '/image/generate': config.ai.timeouts.imageMs
 };
 
 class FastAPIService {
@@ -20,7 +20,7 @@ class FastAPIService {
     async request(endpoint, payload, method = 'POST', options = {}) {
         // If mock mode is enabled, return mock data
         if (this.isMock) {
-            console.warn(`[AI Mock] ${method} ${endpoint}`, payload);
+            logger.warn({ endpoint, method, mock: true }, 'FastAPI mock response used');
             return this.getMockResponse(endpoint, payload);
         }
 
@@ -32,9 +32,10 @@ class FastAPIService {
         const controller = new AbortController();
         const timeoutMs = options.timeoutMs ?? ENDPOINT_TIMEOUTS[endpoint] ?? config.ai.timeouts.contentMs;
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const startedAt = Date.now();
 
         try {
-            console.log(`[FastAPI] ${method} ${url}`);
+            logger.debug({ endpoint, method, timeoutMs, url }, 'FastAPI request start');
 
             const response = await fetch(url, {
                 method,
@@ -47,22 +48,52 @@ class FastAPIService {
 
             if (!response.ok) {
                 const errorData = await response.text();
-                console.error(`[FastAPI Error] ${response.status}:`, errorData.slice(0, 200));
+                logger.error(
+                    {
+                        endpoint,
+                        method,
+                        status: response.status,
+                        statusText: response.statusText,
+                        durationMs: Date.now() - startedAt,
+                        errorPreview: errorData.slice(0, 200)
+                    },
+                    'FastAPI request failed'
+                );
                 throw new ApiError(502, `FastAPI error: ${response.statusText}`);
             }
 
             const data = await response.json();
-            console.log(`[FastAPI Response] Success`);
+            logger.debug(
+                {
+                    endpoint,
+                    method,
+                    status: response.status,
+                    durationMs: Date.now() - startedAt
+                },
+                'FastAPI request succeeded'
+            );
             return data;
         } catch (error) {
             clearTimeout(timeoutId);
 
             if (error.name === 'AbortError') {
+                logger.error(
+                    { endpoint, method, timeoutMs, durationMs: Date.now() - startedAt },
+                    'FastAPI request timed out'
+                );
                 throw new ApiError(504, `FastAPI request timeout (${Math.round(timeoutMs / 1000)}s exceeded)`);
             }
             if (error instanceof ApiError) throw error;
 
-            console.error(`[FastAPI Exception]`, error.message);
+            logger.error(
+                {
+                    endpoint,
+                    method,
+                    durationMs: Date.now() - startedAt,
+                    error: error.message
+                },
+                'FastAPI request exception'
+            );
             throw new ApiError(502, `FastAPI connection error: ${error.message}`);
         }
     }
@@ -226,28 +257,6 @@ class FastAPIService {
     }
 
     /**
-     * Get SEO hints/score for content
-     * Called by: POST /api/content/:id/seo-hints (new endpoint you might need)
-     */
-    async getSeoHints(platform, language, focusKeyword, content) {
-        const payload = {
-            platform,
-            language,
-            focusKeyword,
-            content
-        };
-
-        const response = await this.request('/seo/hints', payload, 'POST', {
-            timeoutMs: ENDPOINT_TIMEOUTS['/seo/hints']
-        });
-
-        return {
-            score: response.score || 0,
-            hints: response.hints || []
-        };
-    }
-
-    /**
      * Generate images + alt text from FastAPI
      */
     async generateImages(prompt, { platform = 'blog', style = null, sizes = ['1024x1024'], count = 1, language = 'en' } = {}) {
@@ -318,20 +327,15 @@ class FastAPIService {
                     html: `<h1>${payload.topicOrIdea}</h1><p>This is mock content generated for ${payload.platform} platform.</p>`,
                     plainText: `# ${payload.topicOrIdea}\n\nThis is mock content generated for ${payload.platform} platform.`
                 },
+                metrics: {
+                    grammarScore: 88,
+                    readabilityScore: 76,
+                    ragScore: null
+                },
                 diagnostics: {
                     usedRAG: false,
                     platform: payload.platform
                 }
-            };
-        }
-
-        if (endpoint === '/seo/hints') {
-            return {
-                score: 78,
-                hints: [
-                    { type: 'length', msg: 'Content length is optimal' },
-                    { type: 'keyword', msg: `Include focus keyword "${payload.focusKeyword}" more naturally` }
-                ]
             };
         }
 

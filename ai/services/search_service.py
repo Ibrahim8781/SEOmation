@@ -83,12 +83,12 @@ async def _serpapi_search(query: str, num_results: int, api_key: str) -> List[Di
 async def _duckduckgo_search(query: str, num_results: int) -> List[Dict[str, str]]:
     """
     DuckDuckGo search - unlimited and free
-    Uses ddg-search library in thread pool to avoid blocking
+    Uses ddgs library in thread pool to avoid blocking
     """
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS  # noqa: F401
     except ImportError:
-        logger.error("duckduckgo-search not installed. Run: pip install duckduckgo-search")
+        logger.error("ddgs not installed. Run: pip install -r requirements.txt")
         return []
     
     # Run sync DDG search in thread pool
@@ -98,7 +98,7 @@ async def _duckduckgo_search(query: str, num_results: int) -> List[Dict[str, str
 
 def _sync_ddg_search(query: str, num_results: int) -> List[Dict[str, str]]:
     """Synchronous DuckDuckGo search (called in thread pool)"""
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     
     results = []
     with DDGS() as ddgs:
