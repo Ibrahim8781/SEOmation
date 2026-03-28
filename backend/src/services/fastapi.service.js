@@ -1,6 +1,7 @@
 import { config } from '../config/index.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../lib/logger.js';
+import { TOPIC_SUGGESTION_COUNT } from '../constants/topic-limits.js';
 
 const ENDPOINT_TIMEOUTS = {
     '/topic/suggest': config.ai.timeouts.topicsMs,
@@ -103,6 +104,7 @@ class FastAPIService {
      * Called by: POST /api/topics/generate
      */
     async generateTopics(userId, language, niche, persona, context) {
+        const requestedCount = Number.parseInt(context?.count, 10);
         const payload = {
             userId,
             language,
@@ -113,7 +115,9 @@ class FastAPIService {
             season: context?.season || null,
             contentGoals: context?.contentGoals || null,
             preferredContentTypes: context?.preferredContentTypes || [],
-            count: context?.count || 12,
+            count: Number.isFinite(requestedCount)
+                ? Math.min(TOPIC_SUGGESTION_COUNT, Math.max(1, requestedCount))
+                : TOPIC_SUGGESTION_COUNT,
             includeTrends: context?.includeTrends !== false,
             namespace: context?.namespace || null
         };

@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+TOPIC_SUGGESTION_COUNT = 6
+
 class Persona(BaseModel):
     role: str = Field(min_length=2)
     pains: List[str] = []
@@ -15,7 +17,7 @@ class TopicSuggestRequest(BaseModel):
     season: Optional[str] = None
     contentGoals: Optional[str] = None
     preferredContentTypes: List[str] = []
-    count: int = Field(default=12, ge=5, le=40)
+    count: int = Field(default=TOPIC_SUGGESTION_COUNT, ge=1, le=TOPIC_SUGGESTION_COUNT)
     includeTrends: bool = True
     namespace: Optional[str] = None
 

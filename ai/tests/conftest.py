@@ -27,7 +27,7 @@ def sample_topic_request():
         "seedKeywords": ["SEO", "content", "automation"],
         "region": "US",
         "season": "Q4",
-        "count": 12,
+        "count": 6,
         "includeTrends": True
     }
 

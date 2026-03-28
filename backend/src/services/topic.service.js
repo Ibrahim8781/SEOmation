@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { TOPIC_SUGGESTION_COUNT } from '../constants/topic-limits.js';
 
 
 export const TopicService = {
@@ -12,15 +13,17 @@ if (!Array.isArray(items) || items.length === 0) {
 return prisma.topic.findMany({
 where: { userId, status: 'SUGGESTED' },
 orderBy: { createdAt: 'desc' },
-take: 12
+take: TOPIC_SUGGESTION_COUNT
 });
 }
+
+const limitedItems = items.slice(0, TOPIC_SUGGESTION_COUNT);
 
 await prisma.topic.deleteMany({
 where: { userId, status: 'SUGGESTED' }
 });
 
-const data = items.map((t) => {
+const data = limitedItems.map((t) => {
 const aiMeta = t.aiMeta ? { ...t.aiMeta } : {};
 if (t.trendTag && !aiMeta.trendTag) {
 aiMeta.trendTag = t.trendTag;
