@@ -41,3 +41,4 @@ logs/
 # System files
 Thumbs.db
 
+.env.test
