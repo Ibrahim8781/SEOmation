@@ -90,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     registerRefreshHandler((payload) => {
       if (!payload) {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('session_expired', '1');
+        }
         clearSession();
         return;
       }

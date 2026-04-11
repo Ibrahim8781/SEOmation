@@ -45,6 +45,12 @@
   gap: 1rem;
 }
 
+.dashboard-metrics__hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;

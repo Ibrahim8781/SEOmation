@@ -8,16 +8,22 @@ import {
   type ReactNode
 } from 'react';
 import type { BusinessProfile } from '@/types';
+import type { OnboardingFormValues } from '@/validation/onboardingSchema';
 import { clearOnboardingState, loadOnboardingState, storeOnboardingState } from '@/utils/storage';
 import { useAuthContext } from './AuthContext';
 
+const ONBOARDING_DRAFT_KEY = 'seomation:onboarding-draft';
+
 interface OnboardingContextValue {
   businessProfile: BusinessProfile | null;
+  onboardingDraft: OnboardingFormValues | null;
   isOnboarded: boolean;
   initializing: boolean;
   saveProgress: (profile: BusinessProfile, completed?: boolean) => void;
   completeOnboarding: (profile: BusinessProfile) => void;
   resetOnboarding: () => void;
+  setOnboardingDraft: (values: OnboardingFormValues) => void;
+  clearOnboardingDraft: () => void;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
@@ -25,6 +31,7 @@ const OnboardingContext = createContext<OnboardingContextValue | undefined>(unde
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const { user } = useAuthContext();
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [onboardingDraft, setOnboardingDraftState] = useState<OnboardingFormValues | null>(null);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
   const initializing = user ? resolvedUserId !== user.id : false;
@@ -32,6 +39,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) {
       setBusinessProfile(null);
+      setOnboardingDraftState(null);
       setIsOnboarded(false);
       setResolvedUserId(null);
       return;
@@ -50,6 +58,24 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setBusinessProfile(stored.profile ?? null);
     setIsOnboarded(stored.completed);
     setResolvedUserId(user.id);
+
+    if (typeof window === 'undefined') {
+      setOnboardingDraftState(null);
+      return;
+    }
+
+    try {
+      const rawDraft = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+      if (!rawDraft) {
+        setOnboardingDraftState(null);
+        return;
+      }
+      const draftMap = JSON.parse(rawDraft) as Record<string, OnboardingFormValues>;
+      setOnboardingDraftState(draftMap[user.id] ?? null);
+    } catch (error) {
+      console.warn('Failed to read onboarding draft from sessionStorage', error);
+      setOnboardingDraftState(null);
+    }
   }, [user]);
 
   const saveProgress = useCallback(
@@ -65,8 +91,27 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const completeOnboarding = useCallback(
     (profile: BusinessProfile) => {
       saveProgress(profile, true);
+      if (user) {
+        if (typeof window === 'undefined') {
+          setOnboardingDraftState(null);
+          return;
+        }
+        try {
+          const rawDraft = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+          if (!rawDraft) {
+            setOnboardingDraftState(null);
+            return;
+          }
+          const draftMap = JSON.parse(rawDraft) as Record<string, OnboardingFormValues>;
+          delete draftMap[user.id];
+          window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify(draftMap));
+          setOnboardingDraftState(null);
+        } catch (error) {
+          console.warn('Failed to clear onboarding draft from sessionStorage', error);
+        }
+      }
     },
-    [saveProgress]
+    [saveProgress, user]
   );
 
   const resetOnboarding = useCallback(() => {
@@ -76,16 +121,68 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setIsOnboarded(false);
   }, [user]);
 
+  const setOnboardingDraft = useCallback(
+    (values: OnboardingFormValues) => {
+      if (!user) return;
+      if (typeof window === 'undefined') return;
+      try {
+        const rawDraft = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+        const draftMap = rawDraft
+          ? (JSON.parse(rawDraft) as Record<string, OnboardingFormValues>)
+          : {};
+        draftMap[user.id] = values;
+        window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify(draftMap));
+      } catch (error) {
+        console.warn('Failed to persist onboarding draft to sessionStorage', error);
+      }
+    },
+    [user]
+  );
+
+  const clearOnboardingDraft = useCallback(() => {
+    if (!user) return;
+    if (typeof window === 'undefined') {
+      setOnboardingDraftState(null);
+      return;
+    }
+    try {
+      const rawDraft = window.sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+      if (!rawDraft) {
+        setOnboardingDraftState(null);
+        return;
+      }
+      const draftMap = JSON.parse(rawDraft) as Record<string, OnboardingFormValues>;
+      delete draftMap[user.id];
+      window.sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify(draftMap));
+      setOnboardingDraftState(null);
+    } catch (error) {
+      console.warn('Failed to clear onboarding draft from sessionStorage', error);
+    }
+  }, [user]);
+
   const value = useMemo<OnboardingContextValue>(
     () => ({
       businessProfile,
+      onboardingDraft,
       isOnboarded,
       initializing,
       saveProgress,
       completeOnboarding,
-      resetOnboarding
+      resetOnboarding,
+      setOnboardingDraft,
+      clearOnboardingDraft
     }),
-    [businessProfile, completeOnboarding, initializing, isOnboarded, resetOnboarding, saveProgress]
+    [
+      businessProfile,
+      onboardingDraft,
+      completeOnboarding,
+      clearOnboardingDraft,
+      initializing,
+      isOnboarded,
+      resetOnboarding,
+      saveProgress,
+      setOnboardingDraft
+    ]
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;

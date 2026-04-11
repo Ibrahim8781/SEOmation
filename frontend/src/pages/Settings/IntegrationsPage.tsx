@@ -188,6 +188,7 @@ export function IntegrationsPage() {
     try {
       setConnecting(platform);
       const { data } = await IntegrationsAPI.getAuthUrl(platform);
+      setStatus("You'll be redirected to authenticate.");
       window.location.assign(data.url);
     } catch (err) {
       setError(extractErrorMessage(err, 'Unable to start connection.'));
@@ -267,6 +268,7 @@ export function IntegrationsPage() {
                   </Button>
                 )}
               </div>
+              {!connected && <p className="integration-card__hint">You&apos;ll be redirected to authenticate.</p>}
             </article>
           );
         })}

@@ -28,7 +28,8 @@ import {
   formatDateTimeLocalMin,
   formatScheduledDateTime,
   isFutureScheduledInput,
-  resolveScheduleTimeZone
+  resolveScheduleTimeZone,
+  scheduledLocalInputToUtc
 } from '@/utils/scheduleTime';
 import './contentEditor.css';
 
@@ -76,6 +77,13 @@ const platformOptions: { label: string; value: IntegrationPlatform }[] = [
   { label: 'LinkedIn', value: 'LINKEDIN' },
   { label: 'Instagram', value: 'INSTAGRAM' }
 ];
+
+function formatPlatformLabel(platform: IntegrationPlatform) {
+  if (platform === 'WORDPRESS') return 'WordPress';
+  if (platform === 'LINKEDIN') return 'LinkedIn';
+  if (platform === 'INSTAGRAM') return 'Instagram';
+  return platform;
+}
 
 const META_DESCRIPTION_MIN_LENGTH = 140;
 const META_DESCRIPTION_MAX_LENGTH = 160;
@@ -131,6 +139,7 @@ export function ContentEditorPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [images, setImages] = useState<ContentImageLink[]>([]);
   const [imageLoading, setImageLoading] = useState(false);
+  const [imageLoadingMessage, setImageLoadingMessage] = useState('');
   const [imagePrompt, setImagePrompt] = useState('');
   const [imageStyle, setImageStyle] = useState<ImageStylePreset>('auto');
   const [imageCount, setImageCount] = useState(1);
@@ -146,8 +155,11 @@ export function ContentEditorPage() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<IntegrationPlatform>('WORDPRESS');
   const [scheduledTime, setScheduledTime] = useState('');
+  const [publishing, setPublishing] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<EditorSnapshot | null>(null);
   const scoreTimer = useRef<number | null>(null);
+  const imageLongWaitTimer = useRef<number | null>(null);
+  const publishLongWaitTimer = useRef<number | null>(null);
   const publishIntent = (location.state as { openPublishModal?: boolean } | null)?.openPublishModal;
   const [activeSidePanel, setActiveSidePanel] = useState<'seo' | 'images' | 'publishing'>('seo');
   const scheduleTimeZone = resolveScheduleTimeZone(user?.timezone);
@@ -176,6 +188,20 @@ export function ContentEditorPage() {
     }
     return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters`;
   }, [linkedinText]);
+
+  const clearImageLongWaitTimer = () => {
+    if (imageLongWaitTimer.current) {
+      window.clearTimeout(imageLongWaitTimer.current);
+      imageLongWaitTimer.current = null;
+    }
+  };
+
+  const clearPublishLongWaitTimer = () => {
+    if (publishLongWaitTimer.current) {
+      window.clearTimeout(publishLongWaitTimer.current);
+      publishLongWaitTimer.current = null;
+    }
+  };
 
   const load = async () => {
     if (!id) return;
@@ -259,8 +285,8 @@ export function ContentEditorPage() {
       const { data } = await ContentAPI.listImages(id);
       setImages(data.items);
       syncSelectedImages(data.items);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn('Failed to load images:', err);
     }
   };
 
@@ -272,8 +298,9 @@ export function ContentEditorPage() {
         setSelectedIntegrationId(data.items[0].id);
         setSelectedPlatform(data.items[0].platform);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn('Failed to load integrations:', err);
+      setErrorMessage('Could not load publishing integrations.');
     }
   };
 
@@ -281,8 +308,8 @@ export function ContentEditorPage() {
     try {
       const { data } = await ScheduleAPI.list();
       setJobs(data.items);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn('Failed to load schedule jobs:', err);
     }
   };
 
@@ -334,6 +361,13 @@ export function ContentEditorPage() {
     };
   }, [title, metaDescription, bodyHtml, primaryKeyword, secondaryKeywords, images]);
 
+  useEffect(() => {
+    return () => {
+      clearImageLongWaitTimer();
+      clearPublishLongWaitTimer();
+    };
+  }, []);
+
   const saveDraft = useCallback(async (options?: { successMessage?: string }) => {
     if (!id) return;
     setSaving(true);
@@ -363,6 +397,11 @@ export function ContentEditorPage() {
         })
       );
       setStatusMessage(options?.successMessage ?? `Saved with SEO score ${Math.round(data.seo.total)}`);
+      if (!options?.successMessage) {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
       return true;
     } catch (err) {
       setErrorMessage(extractErrorMessage(err, 'Unable to save this draft.'));
@@ -383,6 +422,11 @@ export function ContentEditorPage() {
       setErrorMessage(`Image prompt must be ${IMAGE_PROMPT_MAX_LENGTH} characters or fewer.`);
       return;
     }
+    clearImageLongWaitTimer();
+    imageLongWaitTimer.current = window.setTimeout(() => {
+      setImageLoadingMessage('This is taking longer than expected...');
+    }, 45000);
+    setImageLoadingMessage(`Generating ${imageCount} image(s)...`);
     setImageLoading(true);
     setErrorMessage('');
     try {
@@ -402,11 +446,18 @@ export function ContentEditorPage() {
       setErrorMessage(extractErrorMessage(err, 'Unable to generate images right now.'));
     } finally {
       setImageLoading(false);
+      setImageLoadingMessage('');
+      clearImageLongWaitTimer();
     }
   };
 
   const handleUploadImage = async (file?: File | null) => {
     if (!id || !file) return;
+    clearImageLongWaitTimer();
+    imageLongWaitTimer.current = window.setTimeout(() => {
+      setImageLoadingMessage('This is taking longer than expected...');
+    }, 45000);
+    setImageLoadingMessage('Uploading image...');
     setImageLoading(true);
     setErrorMessage('');
     try {
@@ -423,11 +474,18 @@ export function ContentEditorPage() {
       setErrorMessage(extractErrorMessage(err, 'Unable to upload image.'));
     } finally {
       setImageLoading(false);
+      setImageLoadingMessage('');
+      clearImageLongWaitTimer();
     }
   };
 
   const handleDeleteImage = async (linkId: string) => {
     if (!id) return;
+    clearImageLongWaitTimer();
+    imageLongWaitTimer.current = window.setTimeout(() => {
+      setImageLoadingMessage('This is taking longer than expected...');
+    }, 45000);
+    setImageLoadingMessage('Removing image...');
     setImageLoading(true);
     setErrorMessage('');
     try {
@@ -437,11 +495,13 @@ export function ContentEditorPage() {
       setErrorMessage(extractErrorMessage(err, 'Unable to delete image.'));
     } finally {
       setImageLoading(false);
+      setImageLoadingMessage('');
+      clearImageLongWaitTimer();
     }
   };
 
   const handlePublishNow = async () => {
-    if (!id || !selectedIntegrationId) return;
+    if (!id || !selectedIntegrationId || publishing) return;
     setErrorMessage('');
     if (isDirty) {
       const saved = await saveDraft({ successMessage: 'Draft saved. Publishing latest changes now.' });
@@ -451,6 +511,11 @@ export function ContentEditorPage() {
       setErrorMessage('Instagram requires selecting an image.');
       return;
     }
+    clearPublishLongWaitTimer();
+    publishLongWaitTimer.current = window.setTimeout(() => {
+      setStatusMessage('This is taking longer than expected...');
+    }, 45000);
+    setPublishing(true);
     try {
       const payload: PublishPayload = {
         integrationId: selectedIntegrationId,
@@ -462,16 +527,21 @@ export function ContentEditorPage() {
         }
       };
       const { data } = await ScheduleAPI.publishNow(id, payload);
-      setStatusMessage('Publish job created.');
+      setStatusMessage(
+        `Published to ${formatPlatformLabel(selectedPlatform)}. View progress in the Publishing Schedule.`
+      );
       setPublishModalOpen(false);
       setJobs((prev) => [data.job, ...prev]);
     } catch (err) {
       setErrorMessage(extractErrorMessage(err, 'Unable to publish now.'));
+    } finally {
+      setPublishing(false);
+      clearPublishLongWaitTimer();
     }
   };
 
   const handleSchedule = async () => {
-    if (!id || !selectedIntegrationId || !scheduledTime) return;
+    if (!id || !selectedIntegrationId || !scheduledTime || publishing) return;
     setErrorMessage('');
     if (isDirty) {
       const saved = await saveDraft({ successMessage: 'Draft saved. Scheduling latest changes now.' });
@@ -490,6 +560,11 @@ export function ContentEditorPage() {
       setErrorMessage('Pick a future time for scheduling.');
       return;
     }
+    clearPublishLongWaitTimer();
+    publishLongWaitTimer.current = window.setTimeout(() => {
+      setStatusMessage('This is taking longer than expected...');
+    }, 45000);
+    setPublishing(true);
     try {
       const payload: SchedulePayload = {
         integrationId: selectedIntegrationId,
@@ -502,11 +577,18 @@ export function ContentEditorPage() {
         }
       };
       const { data } = await ScheduleAPI.schedule(id, payload);
-      setStatusMessage('Schedule created.');
+      const formattedTime = formatScheduledDateTime(
+        scheduledLocalInputToUtc(scheduledTime, scheduleTimeZone).toISOString(),
+        scheduleTimeZone
+      );
+      setStatusMessage(`Scheduled for ${formattedTime}. View in the Publishing Schedule.`);
       setPublishModalOpen(false);
       setJobs((prev) => [data.job, ...prev]);
     } catch (err) {
       setErrorMessage(extractErrorMessage(err, 'Unable to schedule this content.'));
+    } finally {
+      setPublishing(false);
+      clearPublishLongWaitTimer();
     }
   };
 
@@ -784,6 +866,7 @@ export function ContentEditorPage() {
                         Generate
                       </Button>
                     </div>
+                    {imageLoadingMessage && <p className="muted">{imageLoadingMessage}</p>}
                     <label className="upload-label">
                       <input
                         type="file"
@@ -924,10 +1007,20 @@ export function ContentEditorPage() {
             <Button variant="ghost" onClick={() => setPublishModalOpen(false)}>
               Close
             </Button>
-            <Button variant="secondary" onClick={handlePublishNow}>
+            <Button
+              variant="secondary"
+              onClick={handlePublishNow}
+              isLoading={publishing}
+              disabled={saving || publishing}
+            >
               Publish now
             </Button>
-            <Button onClick={handleSchedule} leftIcon={<FiClock />}>
+            <Button
+              onClick={handleSchedule}
+              leftIcon={<FiClock />}
+              isLoading={publishing}
+              disabled={saving || publishing || !scheduledTime}
+            >
               Schedule
             </Button>
           </>

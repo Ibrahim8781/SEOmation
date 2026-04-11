@@ -92,6 +92,12 @@
   margin-top: auto;
 }
 
+.integration-card__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
 .integrations-error {
   padding: 10px;
   color: #a8071a;

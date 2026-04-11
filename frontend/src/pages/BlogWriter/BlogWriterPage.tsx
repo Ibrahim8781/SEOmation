@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { FiCheck, FiChevronDown, FiCopy, FiEdit3, FiSend, FiX } from 'react-icons/fi';
@@ -19,9 +19,11 @@ import { CONTENT_PROMPT_MAX_LENGTH, IMAGE_PROMPT_MAX_LENGTH, LINKEDIN_POST_MAX_L
 import { IMAGE_STYLE_OPTIONS, normalizeImageStyle, type ImageStylePreset } from '@/utils/imageStyles';
 import { getTextSurfaceProps } from '@/utils/languagePresentation';
 import {
+  formatScheduledDateTime,
   formatDateTimeLocalMin,
   isFutureScheduledInput,
-  resolveScheduleTimeZone
+  resolveScheduleTimeZone,
+  scheduledLocalInputToUtc
 } from '@/utils/scheduleTime';
 import './blogWriter.css';
 
@@ -75,6 +77,13 @@ function buildImageFailureMessage(items: ContentImageLink[]) {
   return 'Image generation failed and only placeholders were returned. Check your image provider keys and retry.';
 }
 
+function formatPlatformLabel(platform: IntegrationPlatform) {
+  if (platform === 'WORDPRESS') return 'WordPress';
+  if (platform === 'LINKEDIN') return 'LinkedIn';
+  if (platform === 'INSTAGRAM') return 'Instagram';
+  return platform;
+}
+
 export function BlogWriterPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -104,6 +113,7 @@ export function BlogWriterPage() {
     initialTopic?.targetKeyword ?? initialTopic?.title ?? ''
   );
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'assistant-welcome',
@@ -133,6 +143,7 @@ export function BlogWriterPage() {
   const [imagesLoading, setImagesLoading] = useState(false);
   const [imagesError, setImagesError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [clipboardFail, setClipboardFail] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [integrations, setIntegrations] = useState<PlatformIntegration[]>([]);
@@ -146,21 +157,75 @@ export function BlogWriterPage() {
     linkedin: false,
     images: false
   });
+  const [imageRequestCount, setImageRequestCount] = useState(0);
   const [activePanel, setActivePanel] = useState<'blog' | 'instagram' | 'linkedin' | 'seo' | 'images' | null>(null);
   const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const panelBodyRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const copyResetTimer = useRef<number | null>(null);
+  const clipboardFailTimer = useRef<number | null>(null);
+  const generationStatusTimers = useRef<number[]>([]);
   const previousTopicIdRef = useRef<string | null>(initialTopic?.id ?? null);
   const textSurfaceProps = useMemo(() => getTextSurfaceProps(language), [language]);
   const codeSurfaceProps = useMemo(() => getTextSurfaceProps(language, { code: true }), [language]);
+
+  const clearGenerationStatusTimers = useCallback(() => {
+    generationStatusTimers.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    generationStatusTimers.current = [];
+  }, []);
+
+  const queueGenerationStatusUpdates = useCallback(() => {
+    clearGenerationStatusTimers();
+    setGenerationStatus('Researching your topic...');
+    generationStatusTimers.current = [
+      window.setTimeout(() => setGenerationStatus('Writing your draft...'), 5000),
+      window.setTimeout(() => setGenerationStatus('Almost done...'), 20000),
+      window.setTimeout(() => setGenerationStatus('This is taking longer than expected...'), 45000)
+    ];
+  }, [clearGenerationStatusTimers]);
+
+  const showClipboardFailure = useCallback(() => {
+    setClipboardFail(true);
+    if (clipboardFailTimer.current) {
+      window.clearTimeout(clipboardFailTimer.current);
+    }
+    clipboardFailTimer.current = window.setTimeout(() => {
+      setClipboardFail(false);
+    }, 2000);
+  }, []);
+
+  const copyTextToClipboard = useCallback(
+    async (value: string) => {
+      if (!value) return false;
+      try {
+        if (!('clipboard' in navigator)) {
+          showClipboardFailure();
+          return false;
+        }
+        await navigator.clipboard.writeText(value);
+        setClipboardFail(false);
+        return true;
+      } catch (err) {
+        console.warn('Failed to copy text:', err);
+        showClipboardFailure();
+        return false;
+      }
+    },
+    [showClipboardFailure]
+  );
 
   useEffect(() => {
     return () => {
       if (copyResetTimer.current) {
         window.clearTimeout(copyResetTimer.current);
       }
+      if (clipboardFailTimer.current) {
+        window.clearTimeout(clipboardFailTimer.current);
+      }
+      clearGenerationStatusTimers();
     };
-  }, []);
+  }, [clearGenerationStatusTimers]);
 
   useEffect(() => {
     setMessages((prev) => {
@@ -215,6 +280,7 @@ export function BlogWriterPage() {
       setImagesError(extractErrorMessage(err, 'Unable to load generated images.'));
     } finally {
       setImagesLoading(false);
+      setImageRequestCount(0);
     }
   };
 
@@ -226,8 +292,8 @@ export function BlogWriterPage() {
         setSelectedIntegrationId((prev) => prev || data.items[0].id);
         setSelectedPlatform((prev) => prev || data.items[0].platform);
       }
-    } catch {
-      /* ignore list failures for now */
+    } catch (err) {
+      console.warn('Failed to load integrations:', err);
     }
   };
 
@@ -262,6 +328,7 @@ export function BlogWriterPage() {
     setApiError(null);
     setImagesError(null);
     setStatusMessage('');
+    setClipboardFail(false);
 
     const userContent = selectedTopic
       ? `Use the topic "${selectedTopic.title}" with focus keyword "${trimmedKeyword}".`
@@ -282,6 +349,9 @@ export function BlogWriterPage() {
       linkedin: includeLinkedIn,
       images: includeImage || includeLinkedInImage || includeInstagramImage
     });
+    const requestedImageTotal = [includeImage, includeLinkedInImage, includeInstagramImage].filter(Boolean).length;
+    setImageRequestCount(requestedImageTotal);
+    queueGenerationStatusUpdates();
 
     const normalizedImageStyle = normalizeImageStyle(imageStyle);
     const payload: GenerateContentPayload = {
@@ -349,6 +419,8 @@ export function BlogWriterPage() {
         }
       ]);
     } finally {
+      clearGenerationStatusTimers();
+      setGenerationStatus('');
       setIsGenerating(false);
       setCopyMode('idle');
     }
@@ -358,17 +430,13 @@ export function BlogWriterPage() {
     const payload = viewMode === 'html' ? blogHtml : blogPlain;
     if (!payload) return;
 
-    try {
-      if ('clipboard' in navigator) {
-        await navigator.clipboard.writeText(payload);
-        setCopyMode('copied');
-        if (copyResetTimer.current) {
-          window.clearTimeout(copyResetTimer.current);
-        }
-        copyResetTimer.current = window.setTimeout(() => setCopyMode('idle'), 2000);
+    const copied = await copyTextToClipboard(payload);
+    if (copied) {
+      setCopyMode('copied');
+      if (copyResetTimer.current) {
+        window.clearTimeout(copyResetTimer.current);
       }
-    } catch {
-      // Clipboard failures can be surfaced with a toast once global notifications are available.
+      copyResetTimer.current = window.setTimeout(() => setCopyMode('idle'), 2000);
     }
   };
 
@@ -420,7 +488,9 @@ export function BlogWriterPage() {
         platform: selectedPlatform,
         media: resolveMediaSelection()
       });
-      setStatusMessage('Publish job created.');
+      setStatusMessage(
+        `Published to ${formatPlatformLabel(selectedPlatform)}. View progress in the Publishing Schedule.`
+      );
       setPublishModalOpen(false);
       setScheduledTime('');
       // optional: surface job id or platform later
@@ -461,7 +531,11 @@ export function BlogWriterPage() {
         scheduledTime,
         media: resolveMediaSelection()
       });
-      setStatusMessage('Schedule created.');
+      const formattedTime = formatScheduledDateTime(
+        scheduledLocalInputToUtc(scheduledTime, scheduleTimeZone).toISOString(),
+        scheduleTimeZone
+      );
+      setStatusMessage(`Scheduled for ${formattedTime}. View in the Publishing Schedule.`);
       setPublishModalOpen(false);
       setScheduledTime('');
       return data.job;
@@ -593,6 +667,9 @@ export function BlogWriterPage() {
       <main className="blog-writer-body">
         <section className="blog-writer-output glass-card">
           {apiError && <div className="blog-writer-alert">{apiError}</div>}
+          {clipboardFail && (
+            <div className="blog-writer-alert">Copy failed - try selecting the text manually.</div>
+          )}
 
           {!hasBlogDraft && (
             <div className="blog-writer-output__placeholder large">
@@ -691,13 +768,7 @@ export function BlogWriterPage() {
                         variant="ghost"
                         disabled={!instagramCopy}
                         onClick={async () => {
-                          try {
-                            if ('clipboard' in navigator) {
-                              await navigator.clipboard.writeText(instagramCopy);
-                            }
-                          } catch {
-                            /* ignore */
-                          }
+                          await copyTextToClipboard(instagramCopy);
                         }}
                         leftIcon={<FiCopy />}
                       >
@@ -748,13 +819,7 @@ export function BlogWriterPage() {
                         variant="ghost"
                         disabled={!linkedinCopy}
                         onClick={async () => {
-                          try {
-                            if ('clipboard' in navigator) {
-                              await navigator.clipboard.writeText(linkedinCopy);
-                            }
-                          } catch {
-                            /* ignore */
-                          }
+                          await copyTextToClipboard(linkedinCopy);
                         }}
                         leftIcon={<FiCopy />}
                       >
@@ -808,7 +873,7 @@ export function BlogWriterPage() {
                     <div>
                       <p className="eyebrow">Images</p>
                       <span className="muted">
-                        {imagesLoading ? 'Loading...' : `${generatedImages.length} attached`}
+                        {imagesLoading ? 'Generating...' : `${generatedImages.length} attached`}
                         {useImages ? ' • will publish' : ''}
                       </span>
                     </div>
@@ -821,7 +886,11 @@ export function BlogWriterPage() {
                     }}
                   >
                     {imagesError && <div className="blog-writer-alert">{imagesError}</div>}
-                    {imagesLoading && <div className="blog-writer-images__placeholder">Loading images...</div>}
+                    {imagesLoading && (
+                      <div className="blog-writer-images__placeholder">
+                        Generating {Math.max(imageRequestCount, 1)} image(s)...
+                      </div>
+                    )}
                     {!imagesLoading && generatedImages.length > 0 && (
                       <div className="blog-writer-images__grid">
                         {generatedImages.map((item) => (
@@ -997,6 +1066,9 @@ export function BlogWriterPage() {
             <Button type="submit" rightIcon={<FiSend />} isLoading={isGenerating} disabled={isGenerating}>
               {isGenerating ? 'Generating...' : 'Send Prompt'}
             </Button>
+            {isGenerating && generationStatus && (
+              <p className="blog-writer-chat__status">{generationStatus}</p>
+            )}
           </form>
         </section>
       </main>
@@ -1059,6 +1131,9 @@ export function BlogWriterPage() {
               onChange={(e) => setScheduledTime(e.target.value)}
               min={formatDateTimeLocalMin(scheduleTimeZone, 5)}
             />
+            {!scheduledTime && (
+              <p className="blog-writer-publish-hint">Pick a date and time above to enable scheduling.</p>
+            )}
             <p className="blog-writer-publish-hint">Times are scheduled in {scheduleTimeZone}.</p>
             <label className="blog-writer-checkbox blog-writer-checkbox--spaced">
               <input

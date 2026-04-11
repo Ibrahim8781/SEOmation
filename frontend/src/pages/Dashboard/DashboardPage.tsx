@@ -116,38 +116,31 @@ export function DashboardPage() {
     setAttemptedAutoGenerate(false);
   }, [businessProfile]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      if (!user) return;
-      setLoading(true);
-      try {
-        const [topicsRes, contentRes, jobsRes] = await Promise.all([
-          TopicAPI.list(),
-          ContentAPI.list(),
-          ScheduleAPI.list()
-        ]);
-        if (isMounted) {
-          setTopics(topicsRes.data.items);
-          setContent(contentRes.data.items);
-          setJobs(jobsRes.data.items);
-          setTopicGenerationError(null);
-          setAttemptedAutoGenerate(topicsRes.data.items.length > 0);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(extractErrorMessage(err, 'Unable to load your workspace data right now.'));
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      isMounted = false;
-    };
+  const loadWorkspace = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [topicsRes, contentRes, jobsRes] = await Promise.all([
+        TopicAPI.list(),
+        ContentAPI.list(),
+        ScheduleAPI.list()
+      ]);
+      setTopics(topicsRes.data.items);
+      setContent(contentRes.data.items);
+      setJobs(jobsRes.data.items);
+      setTopicGenerationError(null);
+      setAttemptedAutoGenerate(topicsRes.data.items.length > 0);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Unable to load your workspace data right now.'));
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    loadWorkspace();
+  }, [loadWorkspace]);
 
   const generateTopics = useCallback(async () => {
     if (!user || !businessProfile) return;
@@ -246,6 +239,9 @@ export function DashboardPage() {
         <div className="dashboard-error glass-card">
           <h2>We hit a snag</h2>
           <p>{error}</p>
+          <Button variant="secondary" onClick={loadWorkspace}>
+            Try again
+          </Button>
         </div>
       </div>
     );
@@ -290,6 +286,11 @@ export function DashboardPage() {
           accent="purple"
         />
       </section>
+      {content.length === 0 && (
+        <p className="dashboard-metrics__hint">
+          Start generating content to see your analytics here.
+        </p>
+      )}
 
       <section className="dashboard-grid">
         <AnalyticsWidget data={analyticsData} />

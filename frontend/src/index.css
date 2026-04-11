@@ -14,7 +14,15 @@
   --color-primary-soft: #eff2ff;
   --color-surface: #ffffff;
   --color-muted: #737a91;
+  --color-text: #1f1f25;
   --color-border: #e6e9f2;
+  --color-error: #d93025;
+  --color-error-strong: #a8071a;
+  --color-error-bg: #fff1f0;
+  --color-error-border: #ffa39e;
+  --color-success-strong: #237804;
+  --color-success-bg: #f6ffed;
+  --color-success-border: #b7eb8f;
   --color-bg: #f5f6fb;
   --shadow-soft: 0 12px 30px rgba(47, 84, 235, 0.08);
   --shadow-card: 0 10px 25px rgba(28, 39, 68, 0.08);
@@ -135,4 +143,10 @@ button {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

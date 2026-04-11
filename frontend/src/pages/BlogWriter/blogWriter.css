@@ -568,8 +568,8 @@
   margin-top: 0.5rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm, 12px);
-  background: rgba(217, 48, 37, 0.1);
-  color: #c0352b;
+  background: var(--color-error-bg);
+  color: var(--color-error);
   font-size: 0.78rem;
 }
 
@@ -608,6 +608,12 @@
 
 .blog-writer-chat__error {
   margin: 0;
-  color: #d93025;
+  color: var(--color-error);
   font-size: 0.78rem;
+}
+
+.blog-writer-chat__status {
+  margin: 0;
+  color: #4a5167;
+  font-size: 0.8rem;
 }

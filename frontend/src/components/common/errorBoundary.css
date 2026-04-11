@@ -1,0 +1,27 @@
+.error-boundary-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: linear-gradient(180deg, #fefeff 0%, #f2f4fb 100%);
+}
+
+.error-boundary-card {
+  width: min(540px, 100%);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  text-align: center;
+}
+
+.error-boundary-card h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.error-boundary-card p {
+  margin: 0;
+  color: var(--color-muted);
+}

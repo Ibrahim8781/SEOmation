@@ -80,6 +80,7 @@ function setAuthorizationHeader(config: InternalAxiosRequestConfig, token: strin
   }
 
   // Axios v1 may store headers as AxiosHeaders (with set method) or plain object.
+  // Axios exposes request headers as either AxiosHeaders or a plain object, so we narrow at runtime.
   const headers = config.headers as any;
   if (typeof headers.set === 'function') {
     headers.set('Authorization', `Bearer ${token}`);

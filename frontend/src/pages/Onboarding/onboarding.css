@@ -29,7 +29,7 @@
 .onboarding-hero h1 {
   margin: 0;
   font-size: clamp(2rem, 1.3vw + 1.9rem, 2.5rem);
-  color: #1f1f25;
+  color: var(--color-text);
 }
 
 .onboarding-hero p {
@@ -62,6 +62,47 @@
   gap: 2rem;
 }
 
+.onboarding-progress {
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.onboarding-progress__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.onboarding-progress__meta strong {
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.onboarding-progress__meta span {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.onboarding-progress__track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(47, 84, 235, 0.12);
+  overflow: hidden;
+}
+
+.onboarding-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  transition: width 0.2s ease;
+}
+
 .onboarding-section {
   padding: clamp(1.4rem, 2vw + 1rem, 2rem) clamp(1.3rem, 2vw + 1rem, 2.2rem);
   border-radius: var(--radius-lg);
@@ -73,7 +114,7 @@
 .onboarding-section header h2 {
   margin: 0;
   font-size: 1.5rem;
-  color: #1f1f25;
+  color: var(--color-text);
 }
 
 .onboarding-section header p {
@@ -116,7 +157,7 @@
 
 .onboarding-label {
   font-weight: 600;
-  color: #1f1f25;
+  color: var(--color-text);
 }
 
 .onboarding-chip-row {
@@ -148,7 +189,7 @@
 
 .onboarding-error {
   margin: 0;
-  color: #d93025;
+  color: var(--color-error);
   font-size: 0.85rem;
 }
 
@@ -159,13 +200,19 @@
 }
 
 .onboarding-alert--error {
-  background: rgba(217, 48, 37, 0.08);
-  color: #d93025;
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.onboarding-alert--info {
+  background: rgba(47, 84, 235, 0.08);
+  color: var(--color-primary-dark);
 }
 
 .onboarding-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.75rem;
 }
 
 @media (max-width: 900px) {

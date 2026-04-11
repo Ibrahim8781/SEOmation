@@ -121,8 +121,8 @@
 .auth-form__error {
   padding: 0.85rem 1rem;
   border-radius: var(--radius-sm);
-  background: rgba(217, 48, 37, 0.1);
-  color: #d93025;
+  background: var(--color-error-bg);
+  color: var(--color-error);
   font-weight: 500;
 }
 

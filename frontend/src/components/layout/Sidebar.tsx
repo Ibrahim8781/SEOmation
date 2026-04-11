@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
@@ -50,6 +51,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
   const initials =
     user?.name
       ?.split(' ')
@@ -58,6 +60,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       .toUpperCase() ?? 'U';
 
   const workspaceName = user ? `${user.name.split(' ')[0]}'s Workspace` : 'Workspace';
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <aside className={clsx('app-sidebar', collapsed && 'app-sidebar--collapsed')}>
@@ -97,7 +109,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </nav>
 
       <div className="app-sidebar__footer">
-        <Button variant="ghost" onClick={logout} leftIcon={<FiLogOut />} className="app-sidebar__logout">
+        <Button
+          variant="ghost"
+          onClick={handleLogout}
+          leftIcon={<FiLogOut />}
+          className="app-sidebar__logout"
+          isLoading={loggingOut}
+        >
           <span className="app-sidebar__label">Log out</span>
         </Button>
         <div className="app-sidebar__brand">SEOmation</div>

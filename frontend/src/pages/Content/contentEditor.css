@@ -410,22 +410,16 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .content-editor-banner {
-  color: #237804;
-  border: 1px solid #b7eb8f;
-  background: #f6ffed;
+  color: var(--color-success-strong);
+  border: 1px solid var(--color-success-border);
+  background: var(--color-success-bg);
 }
 
 .content-editor-error {
-  color: #a8071a;
-  border: 1px solid #ffa39e;
-  background: #fff1f0;
+  color: var(--color-error-strong);
+  border: 1px solid var(--color-error-border);
+  background: var(--color-error-bg);
 }
 
 .content-editor-loader {

@@ -58,8 +58,8 @@ export function CalendarWidget({ scheduledDates = [], onDateClick }: CalendarWid
         </div>
       </header>
       <div className="calendar-widget__grid">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day) => (
-          <span key={day} className="calendar-widget__day calendar-widget__day--label">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+          <span key={`${day}-${index}`} className="calendar-widget__day calendar-widget__day--label">
             {day}
           </span>
         ))}

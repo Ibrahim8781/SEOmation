@@ -76,7 +76,10 @@ export function ContentListPage() {
             role="button"
             tabIndex={0}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') navigate(`/content/${item.id}`);
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                navigate(`/content/${item.id}`);
+              }
             }}
           >
             <div className="content-card__meta">

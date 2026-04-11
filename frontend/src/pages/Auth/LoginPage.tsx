@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,6 +26,14 @@ export function LoginPage() {
       password: ''
     }
   });
+
+  useEffect(() => {
+    const sessionExpired = window.sessionStorage.getItem('session_expired');
+    if (sessionExpired === '1') {
+      setFormError('Your session expired. Please log in again.');
+      window.sessionStorage.removeItem('session_expired');
+    }
+  }, []);
 
   const onSubmit = async (values: LoginFormValues) => {
     setFormError(null);

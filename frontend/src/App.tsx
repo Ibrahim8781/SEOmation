@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
 import { FullScreenLoader } from '@/components/common/FullScreenLoader';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })));
 const DashboardPage = lazy(() =>
@@ -87,25 +88,27 @@ function RouteRestore() {
 export default function App() {
   return (
     <Suspense fallback={<FullScreenLoader message="Loading app..." />}>
-      <RouteRestore />
-      <Routes>
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="writer" element={<BlogWriterPage />} />
-            <Route path="content" element={<ContentListPage />} />
-            <Route path="content/:id" element={<ContentEditorPage />} />
-            <Route path="settings/integrations" element={<IntegrationsPage />} />
-            <Route path="schedule" element={<SchedulePage />} />
+      <ErrorBoundary>
+        <RouteRestore />
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="writer" element={<BlogWriterPage />} />
+              <Route path="content" element={<ContentListPage />} />
+              <Route path="content/:id" element={<ContentEditorPage />} />
+              <Route path="settings/integrations" element={<IntegrationsPage />} />
+              <Route path="schedule" element={<SchedulePage />} />
+            </Route>
+            <Route path="/onboarding" element={<OnboardingPage />} />
           </Route>
-          <Route path="/onboarding" element={<OnboardingPage />} />
-        </Route>
 
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ErrorBoundary>
     </Suspense>
   );
 }

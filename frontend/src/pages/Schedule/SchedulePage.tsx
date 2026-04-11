@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FiLoader, FiRefreshCw, FiX } from 'react-icons/fi';
 import { ScheduleAPI } from '@/api/schedule';
 import type { ScheduleJob } from '@/types';
@@ -10,6 +11,7 @@ import './schedule.css';
 
 export function SchedulePage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +41,8 @@ export function SchedulePage() {
     try {
       await ScheduleAPI.cancel(id);
       setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, status: 'CANCELLED' } : job)));
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Unable to cancel this job.'));
     }
   };
 
@@ -73,8 +75,11 @@ export function SchedulePage() {
           </div>
         )}
         {!loading && jobs.length === 0 && (
-          <div className="schedule-table__row">
-            <span>No jobs yet.</span>
+          <div className="schedule-empty">
+            <p>No scheduled or published posts yet. Use the Blog Writer to create and schedule content.</p>
+            <Button variant="secondary" onClick={() => navigate('/writer')}>
+              Go to Blog Writer
+            </Button>
           </div>
         )}
         {jobs.map((job) => (
