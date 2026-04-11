@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     HUGGINGFACE_IMAGE_TIMEOUT_SECONDS: int = Field(default=90)
 
     KIE_API_KEY: str = Field(default="")
-    KIE_MODEL: str = Field(default="bytedance/seedream")
+    KIE_MODEL: str = Field(default="seedream/4.5-text-to-image")
     KIE_GUIDANCE_SCALE: float = Field(default=2.5)
     KIE_CREATE_TIMEOUT_SECONDS: int = Field(default=25)
     KIE_POLL_DELAY_SECONDS: int = Field(default=3)
