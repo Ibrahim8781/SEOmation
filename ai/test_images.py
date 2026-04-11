@@ -182,7 +182,7 @@ async def main():
     print(f"  TOGETHER_API_KEY: {'✅ Set' if settings.TOGETHER_API_KEY else '❌ Missing'}")
     print(f"  HUGGINGFACE_API_KEY: {'✅ Set' if settings.HUGGINGFACE_API_KEY else '❌ Missing'}")
     print(f"  GROQ_API_KEY: {'✅ Set' if settings.GROQ_API_KEY else '❌ Missing'}")
-    
+
     if not settings.TOGETHER_API_KEY:
         print("\n⚠️  WARNING: TOGETHER_API_KEY not set!")
         print("   Get it from: https://api.together.xyz/settings/api-keys")

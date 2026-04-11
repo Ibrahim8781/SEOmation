@@ -39,6 +39,18 @@ KIE_SIZE_DIMS = {
     "landscape_21_9": (1024, 439),
 }
 
+KIE_ASPECT_RATIOS = {
+    "square": "1:1",
+    "square_hd": "1:1",
+    "portrait_4_3": "3:4",
+    "portrait_3_2": "2:3",
+    "portrait_16_9": "9:16",
+    "landscape_4_3": "4:3",
+    "landscape_3_2": "3:2",
+    "landscape_16_9": "16:9",
+    "landscape_21_9": "21:9",
+}
+
 KIE_BASE_URL = "https://api.kie.ai/api/v1"
 PLACEHOLDER_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQAB"
@@ -109,6 +121,10 @@ def get_resolution_for_platform(platform: Optional[str]) -> str:
 def get_kie_size_for_platform(platform: Optional[str]) -> str:
     normalized = normalize_platform(platform)
     return PLATFORM_KIE_SIZES.get(normalized, PLATFORM_KIE_SIZES["default"])
+
+
+def get_kie_aspect_ratio(image_size: str) -> str:
+    return KIE_ASPECT_RATIOS.get(image_size, "1:1")
 
 
 def parse_resolution(size_str: Optional[str]) -> Tuple[int, int]:
@@ -208,6 +224,11 @@ def infer_remote_format(url: str) -> str:
     if path.endswith(".jpg") or path.endswith(".jpeg"):
         return "jpeg"
     return "jpeg"
+
+
+def uses_aspect_ratio_kie_model(model_name: Optional[str]) -> bool:
+    normalized = str(model_name or "").strip().lower()
+    return normalized.startswith("seedream/4.5-") or normalized.startswith("seedream/5-")
 
 
 def has_usable_together_key() -> bool:
@@ -310,6 +331,7 @@ async def generate_with_kie(prompt: str, platform: str, style: Optional[str] = N
         raise RuntimeError("KIE_API_KEY not configured")
 
     image_size = get_kie_size_for_platform(platform)
+    aspect_ratio = get_kie_aspect_ratio(image_size)
     width, height = KIE_SIZE_DIMS.get(image_size, (1024, 1024))
     normalized_style = normalize_style_preset(style)
     enhanced_prompt = enhance_prompt_for_quality(prompt, normalized_style)
@@ -317,15 +339,26 @@ async def generate_with_kie(prompt: str, platform: str, style: Optional[str] = N
         "Authorization": f"Bearer {settings.KIE_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": settings.KIE_MODEL,
-        "input": {
-            "prompt": enhanced_prompt,
-            "image_size": image_size,
-            "guidance_scale": settings.KIE_GUIDANCE_SCALE,
-            "enable_safety_checker": True,
-        },
-    }
+    if uses_aspect_ratio_kie_model(settings.KIE_MODEL):
+        payload = {
+            "model": settings.KIE_MODEL,
+            "input": {
+                "prompt": enhanced_prompt,
+                "aspect_ratio": aspect_ratio,
+                "quality": "basic",
+                "nsfw_checker": True,
+            },
+        }
+    else:
+        payload = {
+            "model": settings.KIE_MODEL,
+            "input": {
+                "prompt": enhanced_prompt,
+                "image_size": image_size,
+                "guidance_scale": settings.KIE_GUIDANCE_SCALE,
+                "enable_safety_checker": True,
+            },
+        }
 
     logger.info("image_provider=kie model=%s size=%s", settings.KIE_MODEL, image_size)
 
@@ -365,6 +398,7 @@ async def generate_with_kie(prompt: str, platform: str, style: Optional[str] = N
             "model": settings.KIE_MODEL,
             "taskId": task_id,
             "image_size": image_size,
+            "aspect_ratio": aspect_ratio,
             "timeoutSeconds": settings.KIE_POLL_TIMEOUT_SECONDS,
             "original_prompt": prompt,
             "enhanced_prompt": enhanced_prompt,

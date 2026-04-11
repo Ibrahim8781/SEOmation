@@ -15,12 +15,12 @@ class Settings(BaseSettings):
     TOGETHER_IMAGE_TIMEOUT_SECONDS: int = Field(default=45)
 
     HUGGINGFACE_API_KEY: str = Field(default="")
-    HUGGINGFACE_IMAGE_MODEL: str = Field(default="stabilityai/stable-diffusion-xl-base-1.0")
+    HUGGINGFACE_IMAGE_MODEL: str = Field(default="black-forest-labs/FLUX.1-schnell")
     HUGGINGFACE_IMAGE_STEPS: int = Field(default=25)
     HUGGINGFACE_IMAGE_TIMEOUT_SECONDS: int = Field(default=90)
 
     KIE_API_KEY: str = Field(default="")
-    KIE_MODEL: str = Field(default="bytedance/seedream")
+    KIE_MODEL: str = Field(default="seedream/4.5-text-to-image")
     KIE_GUIDANCE_SCALE: float = Field(default=2.5)
     KIE_CREATE_TIMEOUT_SECONDS: int = Field(default=25)
     KIE_POLL_DELAY_SECONDS: int = Field(default=3)
