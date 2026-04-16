@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
     
     # Image Generation APIs
-    IMAGE_PROVIDER_ORDER: str = Field(default="together,kie,huggingface,placeholder")
+    IMAGE_PROVIDER_ORDER: str = Field(default="kie,huggingface,together,placeholder")
     TOGETHER_API_KEY: str = Field(default="")
     TOGETHER_IMAGE_MODEL: str = Field(default="black-forest-labs/FLUX.1-schnell")
     TOGETHER_IMAGE_STEPS: int = Field(default=4)

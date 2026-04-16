@@ -394,12 +394,21 @@ async def search_and_scrape(queries: List[str], max_urls: int = 10) -> List[Dict
     """
     logger.info(f"search_and_scrape: Processing {len(queries)} queries, max_urls={max_urls}")
     
-    # Step 1: Search all queries
+    # Step 1: Search all queries concurrently
     all_urls = []
     seen_urls = set()
 
-    for query_index, query in enumerate(queries[:3]):  # Limit to 3 queries to avoid rate limits
-        results = await search_ddg(query, max_results=5)
+    limited_queries = list(queries[:3])  # Limit to 3 queries to avoid rate limits
+    search_results = await asyncio.gather(
+        *(search_ddg(query, max_results=5) for query in limited_queries),
+        return_exceptions=True,
+    )
+
+    for query_index, query in enumerate(limited_queries):
+        results = search_results[query_index]
+        if isinstance(results, Exception):
+            logger.error(f"search_and_scrape: Search failed for '{query}': {results}")
+            continue
         for r in results:
             url = r.get("url", "")
             if not url or url in seen_urls:

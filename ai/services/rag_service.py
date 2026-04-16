@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 _qdrant = None
 _engine = None
+_INDEX_BUILD_TASKS: Dict[str, asyncio.Task] = {}
+_RECENT_INDEX_BUILD_TTL_SECONDS = min(settings.CACHE_TTL_SECONDS, 300)
 
 def stable_namespace(user_id: str, language: str, scope: str) -> str:
     return f"{user_id}:{language}:{scope}".lower()
@@ -204,8 +206,41 @@ def ensure_index_async(
     region: Optional[str], season: Optional[str],
     seed_keywords: List[str], namespace: str
 ):
+    recent_build_key = f"index-build:{namespace}"
+    existing_task = _INDEX_BUILD_TASKS.get(namespace)
+    if existing_task and not existing_task.done():
+        logger.info("ensure_index_async skipped_inflight", extra={"ns": namespace})
+        return existing_task
+
+    if get_if_fresh(recent_build_key):
+        logger.info("ensure_index_async skipped_recent", extra={"ns": namespace})
+        return None
+
     logger.info("ensure_index_async scheduled", extra={"ns": namespace, "niche": niche, "language": language})
-    asyncio.create_task(_build_index(user_id, language, niche, region, season, seed_keywords, namespace))
+    task = asyncio.create_task(
+        _run_index_build(user_id, language, niche, region, season, seed_keywords, namespace, recent_build_key)
+    )
+    _INDEX_BUILD_TASKS[namespace] = task
+    return task
+
+
+async def _run_index_build(
+    user_id: str,
+    language: str,
+    niche: str,
+    region: Optional[str],
+    season: Optional[str],
+    seed_keywords: List[str],
+    namespace: str,
+    recent_build_key: str,
+):
+    try:
+        await _build_index(user_id, language, niche, region, season, seed_keywords, namespace)
+        set_with_ttl(recent_build_key, True, _RECENT_INDEX_BUILD_TTL_SECONDS)
+    finally:
+        current_task = _INDEX_BUILD_TASKS.get(namespace)
+        if current_task is asyncio.current_task():
+            _INDEX_BUILD_TASKS.pop(namespace, None)
 
 async def _build_index(
     user_id: str, language: str, niche: str,

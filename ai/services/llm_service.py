@@ -6,13 +6,15 @@ LLM Service - Handles all LLM interactions
 - Gemini (quality) for content generation
 """
 
+import logging
 import json
 import re
-import logging
-from typing import Any, Dict, List
-from config import settings
+from typing import Any, Dict, List, Tuple
+
 import httpx
 from langdetect import detect
+
+from config import settings
 from services.prompt_builder import build_topic_prompt, blog_system, linkedin_system, instagram_system
 from services.render_service import (
     blog_to_html, blog_to_plain,
@@ -335,10 +337,14 @@ Research context (use for ideas, don't copy):
             if "html" in data:
                 del data["html"]
     
-    # Validate blog content
-    issues = []
+    repair_issues = []
     if platform == "blog":
-        issues = _validate_blog(data, focus_keyword, target_length)
+        data, _normalization_notes, repair_issues = _prepare_blog_payload(
+            data,
+            topic_or_idea,
+            focus_keyword,
+            target_length,
+        )
     
     # Check language
     sample_text = ""
@@ -354,16 +360,16 @@ Research context (use for ideas, don't copy):
     try:
         detected_language = detect(sample_text[:200]).lower() if sample_text else ""
         if detected_language and detected_language != expected_language:
-            issues.append(f"Output language must be {expected_language}")
+            repair_issues.append(f"Output language must be {expected_language}")
     except Exception:
         pass
     
     # Repair if needed
-    if issues:
-        logger.warning(f"content_repair: fixing {'; '.join(issues)}")
+    if repair_issues:
+        logger.warning(f"content_repair: fixing {'; '.join(repair_issues)}")
         
         repair_prompt = f"""The previous response had these issues:
-{'; '.join(issues)}
+{'; '.join(repair_issues)}
 
 Please fix these issues and return the corrected JSON in the EXACT structure specified."""
         
@@ -380,11 +386,16 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
             )
             
             # Apply safety check again after repair
-            if platform == "blog" and "html" in data and "sections" not in data:
-                if "sections" not in data:
+            if platform == "blog":
+                if "html" in data and "sections" not in data:
                     data["sections"] = [{"h2": "Introduction", "body": f"Content about {topic_or_idea}"}]
-                if "html" in data:
                     del data["html"]
+                data, _normalization_notes, _ = _prepare_blog_payload(
+                    data,
+                    topic_or_idea,
+                    focus_keyword,
+                    target_length,
+                )
                     
         except Exception as e:
             logger.warning(f"Repair failed: {e}, using original")
@@ -413,7 +424,7 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
     llm_execution = get_last_llm_execution()
     diagnostics = {
         "usedRAG": (retrieved_context or {}).get("usedRAG", False),
-        "repairAttempted": bool(issues),
+        "repairAttempted": bool(repair_issues),
         "platform": platform,
         "model": llm_execution.get("model", settings.GEMINI_MODEL),
         "provider": llm_execution.get("provider", "gemini"),
@@ -428,10 +439,141 @@ Please fix these issues and return the corrected JSON in the EXACT structure spe
         diagnostics["model"],
         platform,
         len(plain),
-        bool(issues),
+        bool(repair_issues),
     )
     
     return packaged, diagnostics, metrics
+
+
+def _prepare_blog_payload(
+    json_obj: Dict[str, Any],
+    topic_or_idea: str,
+    focus_kw: str,
+    target_length: int,
+) -> Tuple[Dict[str, Any], List[str], List[str]]:
+    data = dict(json_obj if isinstance(json_obj, dict) else {})
+    notes: List[str] = []
+    repair_issues: List[str] = []
+
+    title = " ".join(str(data.get("title") or topic_or_idea or focus_kw or "Generated Content").split()).strip()
+    data["title"] = title or "Generated Content"
+    data["h1"] = _ensure_focus_keyword_in_h1(data.get("h1"), data["title"], focus_kw)
+
+    normalized_sections: List[Dict[str, str]] = []
+    raw_sections = data.get("sections")
+    if isinstance(raw_sections, list):
+        for sec in raw_sections:
+            if not isinstance(sec, dict):
+                continue
+            h2 = " ".join(str(sec.get("h2") or "").split()).strip()
+            body = " ".join(str(sec.get("body") or "").split()).strip()
+            if not h2 and not body:
+                continue
+            normalized_sections.append({
+                "h2": h2 or "Section",
+                "body": body,
+            })
+
+    if not normalized_sections:
+        fallback_html = " ".join(str(data.get("html") or "").split()).strip()
+        if fallback_html:
+            normalized_sections = [{"h2": "Introduction", "body": fallback_html[:700]}]
+        else:
+            repair_issues.append("Sections must include body content")
+    data["sections"] = normalized_sections
+
+    meta = data.get("meta")
+    meta_dict = meta if isinstance(meta, dict) else {}
+    meta_dict["description"] = _normalize_meta_description(
+        meta_dict.get("description"),
+        data["title"],
+        focus_kw,
+        normalized_sections,
+    )
+    meta_dict["slug"] = _slugify(str(meta_dict.get("slug") or focus_kw or data["title"]))
+    data["meta"] = meta_dict
+
+    total_len = _blog_word_count(normalized_sections)
+    if total_len and total_len < int(target_length * 0.65):
+        repair_issues.append("Content is significantly shorter than target length")
+    elif total_len and not (0.75 * target_length <= total_len <= 1.35 * target_length):
+        notes.append("Length outside preferred range")
+
+    return data, notes, repair_issues
+
+
+def _ensure_focus_keyword_in_h1(h1: Any, title: str, focus_kw: str) -> str:
+    resolved_h1 = " ".join(str(h1 or title or focus_kw or "Generated Content").split()).strip()
+    if focus_kw and focus_kw.lower() not in resolved_h1.lower():
+        resolved_h1 = f"{focus_kw}: {resolved_h1}"
+    return resolved_h1 or "Generated Content"
+
+
+def _normalize_meta_description(
+    description: Any,
+    title: str,
+    focus_kw: str,
+    sections: List[Dict[str, str]],
+) -> str:
+    candidate = " ".join(str(description or "").split()).strip()
+    if not candidate:
+        excerpt = _blog_excerpt(sections, max_words=28)
+        candidate = " ".join(part for part in [focus_kw, title, excerpt] if part).strip()
+
+    if focus_kw and focus_kw.lower() not in candidate.lower():
+        candidate = f"{focus_kw} - {candidate}".strip(" -")
+
+    if len(candidate) < 140:
+        excerpt = _blog_excerpt(sections, max_words=120)
+        if excerpt:
+            candidate = " ".join(part for part in [candidate, excerpt] if part).strip()
+
+    candidate = re.sub(r"\s+", " ", candidate).strip(" ,.-")
+    if len(candidate) > 160:
+        trimmed = candidate[:157].rsplit(" ", 1)[0].rstrip(" ,.-")
+        candidate = f"{trimmed}..."
+
+    if len(candidate) < 140:
+        candidate = _pad_meta_description(candidate)
+
+    if len(candidate) > 160:
+        trimmed = candidate[:157].rsplit(" ", 1)[0].rstrip(" ,.-")
+        candidate = f"{trimmed}..."
+
+    return candidate or title[:157]
+
+
+def _blog_excerpt(sections: List[Dict[str, str]], max_words: int = 40) -> str:
+    words: List[str] = []
+    for sec in sections:
+        words.extend(str(sec.get("body") or "").split())
+        if len(words) >= max_words:
+            break
+    return " ".join(words[:max_words]).strip()
+
+
+def _blog_word_count(sections: List[Dict[str, str]]) -> int:
+    return sum(len(str(sec.get("body") or "").split()) for sec in sections)
+
+
+def _pad_meta_description(candidate: str, minimum_length: int = 140, maximum_length: int = 160) -> str:
+    normalized = re.sub(r"\s+", " ", str(candidate or "")).strip(" ,.-")
+    if len(normalized) >= minimum_length:
+        return normalized[:maximum_length].rstrip(" ,.-")
+
+    filler = " Practical insights, examples, and clear takeaways."
+    while len(normalized) < minimum_length and len(normalized) < maximum_length:
+        available = maximum_length - len(normalized)
+        if available <= 0:
+            break
+        normalized = f"{normalized}{(filler * 4)[:available]}".strip(" ,.-")
+
+    return normalized[:maximum_length].rstrip(" ,.-")
+
+
+def _slugify(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+    return normalized or "generated-content"
 
 
 def _validate_blog(json_obj: Dict[str, Any], focus_kw: str, target_length: int) -> List[str]:

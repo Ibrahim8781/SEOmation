@@ -98,25 +98,24 @@ export const ContentController = {
         topicId
       });
 
-      // Optional: attach images for the main draft
+      const variantResults = {};
+      const postSaveTasks = [];
+
       if (includeImage) {
-        try {
-          await ImageService.generateAndAttach(saved.id, userId, {
+        postSaveTasks.push(
+          ImageService.generateAndAttach(saved.id, userId, {
             prompt: imagePrompt,
             style: imageStyle,
             count: 1,
             role: 'featured'
-          });
-        } catch (imgErr) {
-          logger.warn({ contentId: saved.id, platform: 'BLOG', error: imgErr.message }, 'Image generation failed');
-        }
+          }).catch((imgErr) => {
+            logger.warn({ contentId: saved.id, platform: 'BLOG', error: imgErr.message }, 'Image generation failed');
+          })
+        );
       }
 
-      const variantResults = {};
-      const variantTasks = [];
-
       if (includeLinkedIn) {
-        variantTasks.push(
+        postSaveTasks.push(
           FastAPIService.generateContent(
             userId,
             'LINKEDIN',
@@ -138,7 +137,7 @@ export const ContentController = {
       }
 
       if (includeInstagram) {
-        variantTasks.push(
+        postSaveTasks.push(
           FastAPIService.generateContent(
             userId,
             'INSTAGRAM',
@@ -159,8 +158,8 @@ export const ContentController = {
         );
       }
 
-      if (variantTasks.length) {
-        await Promise.allSettled(variantTasks);
+      if (postSaveTasks.length) {
+        await Promise.allSettled(postSaveTasks);
       }
 
       const definedVariants = Object.fromEntries(
