@@ -13,6 +13,7 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
+import brandLogo from '@/assets/logo.png';
 import './sidebar.css';
 
 const primaryNav = [
@@ -118,7 +119,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         >
           <span className="app-sidebar__label">Log out</span>
         </Button>
-        <div className="app-sidebar__brand">SEOmation</div>
+        <div className="app-sidebar__brand" aria-label="SEOmation">
+          <img
+            src={brandLogo}
+            alt="SEOmation"
+            className="app-sidebar__brand-logo"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
       </div>
     </aside>
   );

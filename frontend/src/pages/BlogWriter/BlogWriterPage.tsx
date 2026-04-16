@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { FiCheck, FiChevronDown, FiCopy, FiEdit3, FiSend, FiX } from 'react-icons/fi';
+import { FiEdit3, FiSend, FiX } from 'react-icons/fi';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { DraftOutputTabs } from '@/components/content/DraftOutputTabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { ContentAPI, type GenerateContentPayload, type SeoHint } from '@/api/content';
@@ -33,8 +34,6 @@ type ChatMessage = {
   content: string;
   timestamp: string;
 };
-
-type ViewMode = 'html' | 'plain';
 
 type RequestedOutputs = {
   instagram: boolean;
@@ -84,6 +83,14 @@ function formatPlatformLabel(platform: IntegrationPlatform) {
   return platform;
 }
 
+function toSecondaryKeywords(input: string) {
+  if (!input) return [];
+  return input
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
 export function BlogWriterPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -100,7 +107,6 @@ export function BlogWriterPage() {
     return 'Tell me about the topic, keywords, tone, and any calls-to-action. I will shape an SEO-ready blog post for you.';
   }, [businessProfile]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('html');
   const [language, setLanguage] = useState<Language>(
     initialTopic?.language ??
       businessProfile?.language ??
@@ -112,6 +118,11 @@ export function BlogWriterPage() {
   const [focusKeyword, setFocusKeyword] = useState(
     initialTopic?.targetKeyword ?? initialTopic?.title ?? ''
   );
+  const [title, setTitle] = useState(initialTopic?.title ?? '');
+  const [metaDescription, setMetaDescription] = useState('');
+  const [secondaryKeywordsInput, setSecondaryKeywordsInput] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
@@ -137,7 +148,6 @@ export function BlogWriterPage() {
   const [seoHints, setSeoHints] = useState<SeoHint[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [copyMode, setCopyMode] = useState<'idle' | 'copied'>('idle');
   const [contentId, setContentId] = useState<string | null>(null);
   const [generatedImages, setGeneratedImages] = useState<ContentImageLink[]>([]);
   const [imagesLoading, setImagesLoading] = useState(false);
@@ -158,15 +168,10 @@ export function BlogWriterPage() {
     images: false
   });
   const [imageRequestCount, setImageRequestCount] = useState(0);
-  const [activePanel, setActivePanel] = useState<'blog' | 'instagram' | 'linkedin' | 'seo' | 'images' | null>(null);
-  const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const panelBodyRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const copyResetTimer = useRef<number | null>(null);
   const clipboardFailTimer = useRef<number | null>(null);
   const generationStatusTimers = useRef<number[]>([]);
   const previousTopicIdRef = useRef<string | null>(initialTopic?.id ?? null);
   const textSurfaceProps = useMemo(() => getTextSurfaceProps(language), [language]);
-  const codeSurfaceProps = useMemo(() => getTextSurfaceProps(language, { code: true }), [language]);
 
   const clearGenerationStatusTimers = useCallback(() => {
     generationStatusTimers.current.forEach((timerId) => {
@@ -217,9 +222,6 @@ export function BlogWriterPage() {
 
   useEffect(() => {
     return () => {
-      if (copyResetTimer.current) {
-        window.clearTimeout(copyResetTimer.current);
-      }
       if (clipboardFailTimer.current) {
         window.clearTimeout(clipboardFailTimer.current);
       }
@@ -243,6 +245,7 @@ export function BlogWriterPage() {
         setLanguage(selectedTopic.language);
       }
       setPrompt('');
+      setTitle(selectedTopic.title);
       previousTopicIdRef.current = selectedTopic.id;
     }
     if (!selectedTopic) {
@@ -284,6 +287,61 @@ export function BlogWriterPage() {
     }
   };
 
+  const regenerateImages = async () => {
+    if (!contentId) {
+      setImagesError('Generate a draft first, then regenerate images.');
+      return;
+    }
+
+    const resolvedPrompt =
+      imagePrompt.trim() || selectedTopic?.title || prompt.trim() || focusKeyword.trim();
+
+    if (!resolvedPrompt) {
+      setImagesError('Add an image prompt or focus keyword before regenerating images.');
+      return;
+    }
+
+    const normalizedImageStyle = normalizeImageStyle(imageStyle);
+    const requests: Array<{ platform: 'blog' | 'linkedin' | 'instagram'; role: string }> = [];
+
+    if (includeImage) requests.push({ platform: 'blog', role: 'featured' });
+    if (includeLinkedInImage) requests.push({ platform: 'linkedin', role: 'featured' });
+    if (includeInstagramImage) requests.push({ platform: 'instagram', role: 'instagram_main' });
+
+    if (!requests.length) {
+      const existingRoles = new Set(generatedImages.map((item) => item.role));
+      if (existingRoles.has('featured') || existingRoles.has('inline')) {
+        requests.push({ platform: 'blog', role: 'featured' });
+      }
+      if (existingRoles.has('instagram_main')) {
+        requests.push({ platform: 'instagram', role: 'instagram_main' });
+      }
+      if (!requests.length) {
+        requests.push({ platform: 'blog', role: 'featured' });
+      }
+    }
+
+    setImagesLoading(true);
+    setImagesError(null);
+    setImageRequestCount(requests.length);
+    try {
+      for (const request of requests) {
+        await ContentAPI.generateImages(contentId, {
+          prompt: resolvedPrompt,
+          platform: request.platform,
+          role: request.role,
+          count: 1,
+          ...(normalizedImageStyle ? { style: normalizedImageStyle as ImageStylePreset } : {})
+        });
+      }
+      await fetchImagesForContent(contentId);
+      setStatusMessage('Images regenerated successfully.');
+    } catch (err) {
+      setImagesLoading(false);
+      setImagesError(extractErrorMessage(err, 'Unable to regenerate images right now.'));
+    }
+  };
+
   const loadIntegrations = async () => {
     try {
       const { data } = await IntegrationsAPI.list();
@@ -300,6 +358,7 @@ export function BlogWriterPage() {
   const handlePromptSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isGenerating) return;
+    let openingEditor = false;
 
     const trimmedPrompt = prompt.trim();
     const trimmedKeyword = focusKeyword.trim();
@@ -343,7 +402,6 @@ export function BlogWriterPage() {
 
     setMessages((prev) => [...prev, userMessage]);
     setIsGenerating(true);
-    setCopyMode('idle');
     setRequestedOutputs({
       instagram: includeInstagram,
       linkedin: includeLinkedIn,
@@ -385,6 +443,9 @@ export function BlogWriterPage() {
       } else {
         setImagesLoading(false);
       }
+      setTitle(data.item.title ?? selectedTopic?.title ?? '');
+      setMetaDescription(data.item.metaDescription ?? '');
+      setSecondaryKeywordsInput((data.item.secondaryKeywords ?? []).join(', '));
       setBlogHtml(data.item.html ?? '');
       setBlogPlain(data.item.text ?? '');
       setLanguage(data.item.language as Language);
@@ -393,7 +454,7 @@ export function BlogWriterPage() {
       setInstagramCopy(includeInstagram ? variants.instagram?.text ?? '' : '');
       setLinkedinCopy(includeLinkedIn ? variants.linkedin?.text ?? '' : '');
       setFocusKeyword(data.focusKeyword);
-      setActivePanel('blog');
+      setLastSavedAt(data.item.updatedAt);
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
@@ -406,6 +467,15 @@ export function BlogWriterPage() {
       if (!selectedTopic) {
         setPrompt('');
       }
+      clearGenerationStatusTimers();
+      setGenerationStatus('Opening your editable draft...');
+      setStatusMessage('Draft generated. Taking you to the editor now...');
+      openingEditor = true;
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 700);
+      });
+      navigate(`/content/${data.item.id}`, { state: { fromWriter: true } });
+      return;
     } catch (error) {
       const message = extractErrorMessage(error, 'Unable to generate the draft right now.');
       setApiError(message);
@@ -420,23 +490,10 @@ export function BlogWriterPage() {
       ]);
     } finally {
       clearGenerationStatusTimers();
-      setGenerationStatus('');
-      setIsGenerating(false);
-      setCopyMode('idle');
-    }
-  };
-
-  const handleCopy = async () => {
-    const payload = viewMode === 'html' ? blogHtml : blogPlain;
-    if (!payload) return;
-
-    const copied = await copyTextToClipboard(payload);
-    if (copied) {
-      setCopyMode('copied');
-      if (copyResetTimer.current) {
-        window.clearTimeout(copyResetTimer.current);
+      if (!openingEditor) {
+        setGenerationStatus('');
+        setIsGenerating(false);
       }
-      copyResetTimer.current = window.setTimeout(() => setCopyMode('idle'), 2000);
     }
   };
 
@@ -473,6 +530,52 @@ export function BlogWriterPage() {
     }
   };
 
+  const persistDraftEdits = async (showSuccessMessage: boolean) => {
+    if (!contentId) return true;
+    try {
+      const { data } = await ContentAPI.saveDraftWithSeo(contentId, {
+        title: title.trim(),
+        metaDescription: metaDescription.trim(),
+        bodyHtml: blogHtml,
+        primaryKeyword: focusKeyword.trim(),
+        secondaryKeywords: toSecondaryKeywords(secondaryKeywordsInput),
+        linkedinText: linkedinCopy,
+        instagramText: instagramCopy
+      });
+      setSeoScore(Math.round(data.seo.total));
+      setSeoHints(
+        data.seo.components.map((component) => ({
+          type: component.id,
+          msg: component.message
+        }))
+      );
+      setLastSavedAt(data.item.updatedAt);
+      if (showSuccessMessage) {
+        setStatusMessage('Draft saved successfully.');
+      }
+      return true;
+    } catch (err) {
+      const message = extractErrorMessage(err, 'Unable to save your latest edits.');
+      if (showSuccessMessage) {
+        setApiError(message);
+      } else {
+        setPublishError(message);
+      }
+      return false;
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!contentId || savingDraft) return;
+    setSavingDraft(true);
+    setApiError(null);
+    const saved = await persistDraftEdits(true);
+    if (!saved) {
+      setStatusMessage('');
+    }
+    setSavingDraft(false);
+  };
+
   const handlePublishNow = async () => {
     if (!contentId) return;
     if (!selectedIntegrationId) {
@@ -483,6 +586,8 @@ export function BlogWriterPage() {
     setPublishing(true);
     setPublishError(null);
     try {
+      const saved = await persistDraftEdits(false);
+      if (!saved) return;
       const { data } = await ScheduleAPI.publishNow(contentId, {
         integrationId: selectedIntegrationId,
         platform: selectedPlatform,
@@ -525,6 +630,8 @@ export function BlogWriterPage() {
     setPublishing(true);
     setPublishError(null);
     try {
+      const saved = await persistDraftEdits(false);
+      if (!saved) return;
       const { data } = await ScheduleAPI.schedule(contentId, {
         integrationId: selectedIntegrationId,
         platform: selectedPlatform,
@@ -556,45 +663,11 @@ export function BlogWriterPage() {
     handlePublishOpen();
   };
 
+  const lastUpdatedLabel = lastSavedAt
+    ? `Last updated ${new Date(lastSavedAt).toLocaleString()}`
+    : 'Not saved yet';
+
   const hasBlogDraft = Boolean(blogHtml || blogPlain);
-  const hasSeoInsights = seoScore !== null || seoHints.length > 0;
-
-  const togglePanel = (panel: typeof activePanel) => {
-    setActivePanel((prev) => (prev === panel ? panel : panel));
-  };
-
-  useEffect(() => {
-    if (hasBlogDraft && activePanel === null) {
-      setActivePanel('blog');
-    }
-  }, [hasBlogDraft, activePanel]);
-
-  useEffect(() => {
-    if (!activePanel) return;
-    const ref = panelRefs.current[activePanel];
-
-    Object.entries(panelBodyRefs.current).forEach(([key, node]) => {
-      if (node) {
-        if (key === activePanel) {
-          node.style.maxHeight = `${node.scrollHeight}px`;
-          node.style.opacity = '1';
-          node.style.paddingTop = '0.75rem';
-          node.style.paddingBottom = '1rem';
-        } else {
-          node.style.maxHeight = '0px';
-          node.style.opacity = '0';
-          node.style.paddingTop = '0';
-          node.style.paddingBottom = '0';
-        }
-      }
-    });
-
-    if (ref) {
-      window.requestAnimationFrame(() => {
-        ref.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-      });
-    }
-  }, [activePanel]);
 
   return (
     <div className="blog-writer-page">
@@ -678,278 +751,61 @@ export function BlogWriterPage() {
           )}
 
           {hasBlogDraft && (
-            <div className="blog-writer-accordion">
-              {/* Blog */}
-              <div
-                className={clsx('blog-writer-accordion__item', activePanel === 'blog' && 'is-open')}
-                ref={(el) => {
-                  panelRefs.current.blog = el;
-                }}
-              >
-                <button type="button" className="blog-writer-accordion__header" onClick={() => togglePanel('blog')}>
-                  <div>
-                    <p className="eyebrow">Blog draft</p>
-                    <span className="muted">
-                      {viewMode === 'html' ? 'HTML markup' : 'Readable view'} • {focusKeyword || 'No keyword yet'}
-                    </span>
-                  </div>
-                  <div className="blog-writer-accordion__header-actions">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={handleCopy}
-                      leftIcon={copyMode === 'copied' ? <FiCheck /> : <FiCopy />}
-                      disabled={!hasBlogDraft}
-                    >
-                      {copyMode === 'copied' ? 'Copied' : 'Copy'}
-                    </Button>
-                    <FiChevronDown aria-hidden className={clsx(activePanel === 'blog' && 'rotated')} />
-                  </div>
-                </button>
-                <div
-                  className="blog-writer-accordion__body"
-                  ref={(el) => {
-                    panelBodyRefs.current.blog = el;
-                  }}
-                >
-                  <div className="blog-writer-output__switch compact">
-                    <span className={clsx('blog-writer-switch-label', viewMode === 'html' && 'is-active')}>
-                      HTML
-                    </span>
-                    <button
-                      type="button"
-                      className={clsx('blog-writer-switch', viewMode === 'plain' && 'blog-writer-switch--on')}
-                      onClick={() => setViewMode((prev) => (prev === 'html' ? 'plain' : 'html'))}
-                      aria-pressed={viewMode === 'plain'}
-                      aria-label="Toggle between HTML view and readable view"
-                    >
-                      <span className="blog-writer-switch__thumb" />
-                    </button>
-                    <span className={clsx('blog-writer-switch-label', viewMode === 'plain' && 'is-active')}>
-                      Readable
-                    </span>
-                  </div>
-
-                  {viewMode === 'html' && (
-                    <pre className="blog-writer-output__code text-surface" {...codeSurfaceProps}>
-                      {blogHtml}
-                    </pre>
-                  )}
-                  {viewMode === 'plain' && (
-                    <article className="blog-writer-output__article text-surface" {...textSurfaceProps}>
-                      {blogPlain.split('\n\n').map((paragraph, index) => (
-                        <p key={index}>{paragraph}</p>
-                      ))}
-                    </article>
-                  )}
-                </div>
-              </div>
-
-              {/* Instagram */}
-              {(requestedOutputs.instagram || Boolean(instagramCopy)) && (
-                <div
-                  className={clsx('blog-writer-accordion__item', activePanel === 'instagram' && 'is-open')}
-                  ref={(el) => {
-                    panelRefs.current.instagram = el;
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="blog-writer-accordion__header"
-                    onClick={() => togglePanel('instagram')}
-                  >
-                    <div>
-                      <p className="eyebrow">Instagram</p>
-                      <span className="muted">Caption</span>
-                    </div>
-                    <div className="blog-writer-accordion__header-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={!instagramCopy}
-                        onClick={async () => {
-                          await copyTextToClipboard(instagramCopy);
-                        }}
-                        leftIcon={<FiCopy />}
-                      >
-                        Copy
-                      </Button>
-                      <FiChevronDown aria-hidden className={clsx(activePanel === 'instagram' && 'rotated')} />
-                    </div>
-                  </button>
-                  <div
-                    className="blog-writer-accordion__body"
-                    ref={(el) => {
-                      panelBodyRefs.current.instagram = el;
-                    }}
-                  >
-                    {instagramCopy ? (
-                      <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
-                        {instagramCopy}
-                      </p>
-                    ) : (
-                      <div className="blog-writer-images__placeholder">
-                        Instagram caption was requested, but no caption was returned for this run.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* LinkedIn */}
-              {(requestedOutputs.linkedin || Boolean(linkedinCopy)) && (
-                <div
-                  className={clsx('blog-writer-accordion__item', activePanel === 'linkedin' && 'is-open')}
-                  ref={(el) => {
-                    panelRefs.current.linkedin = el;
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="blog-writer-accordion__header"
-                    onClick={() => togglePanel('linkedin')}
-                  >
-                    <div>
-                      <p className="eyebrow">LinkedIn</p>
-                      <span className="muted">Description</span>
-                    </div>
-                    <div className="blog-writer-accordion__header-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={!linkedinCopy}
-                        onClick={async () => {
-                          await copyTextToClipboard(linkedinCopy);
-                        }}
-                        leftIcon={<FiCopy />}
-                      >
-                        Copy
-                      </Button>
-                      <FiChevronDown aria-hidden className={clsx(activePanel === 'linkedin' && 'rotated')} />
-                    </div>
-                  </button>
-                  <div
-                    className="blog-writer-accordion__body"
-                    ref={(el) => {
-                      panelBodyRefs.current.linkedin = el;
-                    }}
-                  >
-                    {linkedinCopy ? (
-                      <>
-                        <p className="blog-writer-snippet__text text-surface" {...textSurfaceProps}>
-                          {linkedinCopy}
-                        </p>
-                        <p className="muted">
-                          {linkedinCopy.trim().length}/{LINKEDIN_POST_MAX_LENGTH} characters
-                        </p>
-                        {linkedinCopy.trim().length > LINKEDIN_POST_MAX_LENGTH && (
-                          <div className="blog-writer-alert">
-                            This LinkedIn draft exceeds the platform limit. Open the draft editor and shorten it before publishing.
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="blog-writer-images__placeholder">
-                        LinkedIn post was requested, but no post was returned for this run.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Images */}
-              {(requestedOutputs.images || generatedImages.length > 0 || imagesLoading || imagesError) && (
-                <div
-                  className={clsx('blog-writer-accordion__item', activePanel === 'images' && 'is-open')}
-                  ref={(el) => {
-                    panelRefs.current.images = el;
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="blog-writer-accordion__header"
-                    onClick={() => togglePanel('images')}
-                  >
-                    <div>
-                      <p className="eyebrow">Images</p>
-                      <span className="muted">
-                        {imagesLoading ? 'Generating...' : `${generatedImages.length} attached`}
-                        {useImages ? ' • will publish' : ''}
-                      </span>
-                    </div>
-                    <FiChevronDown aria-hidden className={clsx(activePanel === 'images' && 'rotated')} />
-                  </button>
-                  <div
-                    className="blog-writer-accordion__body"
-                    ref={(el) => {
-                      panelBodyRefs.current.images = el;
-                    }}
-                  >
-                    {imagesError && <div className="blog-writer-alert">{imagesError}</div>}
-                    {imagesLoading && (
-                      <div className="blog-writer-images__placeholder">
-                        Generating {Math.max(imageRequestCount, 1)} image(s)...
-                      </div>
-                    )}
-                    {!imagesLoading && generatedImages.length > 0 && (
-                      <div className="blog-writer-images__grid">
-                        {generatedImages.map((item) => (
-                          <figure key={item.id} className="blog-writer-images__item">
-                            <img src={item.image.url} alt={item.image.altText ?? 'Generated visual'} />
-                            <figcaption>{item.image.altText || 'AI generated image'}</figcaption>
-                          </figure>
-                        ))}
-                      </div>
-                    )}
-                    {!imagesLoading && generatedImages.length === 0 && !imagesError && (
-                      <div className="blog-writer-images__placeholder">
-                        {requestedOutputs.images
-                          ? 'No usable images were attached for this run. Retry after checking your image providers.'
-                          : 'Images will appear here when generated.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* SEO */}
-              {hasSeoInsights && (
-                <div
-                  className={clsx('blog-writer-accordion__item', activePanel === 'seo' && 'is-open')}
-                  ref={(el) => {
-                    panelRefs.current.seo = el;
-                  }}
-                >
-                  <button type="button" className="blog-writer-accordion__header" onClick={() => togglePanel('seo')}>
-                    <div>
-                      <p className="eyebrow">SEO</p>
-                      <span className="muted">Score {seoScore ?? '—'}</span>
-                    </div>
-                    <FiChevronDown aria-hidden className={clsx(activePanel === 'seo' && 'rotated')} />
-                  </button>
-                  <div
-                    className="blog-writer-accordion__body"
-                    ref={(el) => {
-                      panelBodyRefs.current.seo = el;
-                    }}
-                  >
-                    <div className="blog-writer-seo glass-card">
-                      <div className="blog-writer-seo__score">
-                        <span>SEO score</span>
-                        <strong>{seoScore ?? '—'}</strong>
-                      </div>
-                      {seoHints.length > 0 && (
-                        <ul className="blog-writer-seo__hints">
-                          {seoHints.map((hint) => (
-                            <li key={`${hint.type}-${hint.msg}`}>{hint.msg}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <DraftOutputTabs
+              className="blog-writer-output__tabs"
+              title={title}
+              onTitleChange={setTitle}
+              primaryKeyword={focusKeyword}
+              onPrimaryKeywordChange={setFocusKeyword}
+              metaDescription={metaDescription}
+              onMetaDescriptionChange={setMetaDescription}
+              secondaryKeywords={secondaryKeywordsInput}
+              onSecondaryKeywordsChange={setSecondaryKeywordsInput}
+              blogHtml={blogHtml}
+              onBlogHtmlChange={setBlogHtml}
+              onSaveDraft={handleSaveDraft}
+              onPublishSchedule={handlePublishSchedule}
+              saveBusy={savingDraft}
+              publishBusy={publishing}
+              saveDisabled={!contentId || savingDraft}
+              publishDisabled={!contentId || publishing}
+              lastUpdatedLabel={lastUpdatedLabel}
+              instagramText={instagramCopy}
+              onInstagramTextChange={setInstagramCopy}
+              linkedinText={linkedinCopy}
+              onLinkedinTextChange={setLinkedinCopy}
+              linkedinLimit={LINKEDIN_POST_MAX_LENGTH}
+              images={generatedImages.map((item) => ({
+                id: item.id,
+                url: item.image.url,
+                caption: item.image.altText || 'AI generated image'
+              }))}
+              imagesLoading={imagesLoading}
+              imagesRegenerating={imagesLoading}
+              imageLoadingLabel={`Generating ${Math.max(imageRequestCount, 1)} image(s)...`}
+              imagesError={imagesError}
+              imagesEmptyLabel={
+                requestedOutputs.images
+                  ? 'No usable images were attached for this run. Retry after checking your image providers.'
+                  : 'Images will appear here when generated.'
+              }
+              onRegenerateImages={regenerateImages}
+              instagramEmptyLabel={
+                requestedOutputs.instagram
+                  ? 'Instagram caption was requested, but no caption was returned for this run.'
+                  : 'Instagram caption was not requested for this run.'
+              }
+              linkedinEmptyLabel={
+                requestedOutputs.linkedin
+                  ? 'LinkedIn post was requested, but no post was returned for this run.'
+                  : 'LinkedIn description was not requested for this run.'
+              }
+              seoScore={seoScore}
+              seoBreakdown={seoHints.map((hint) => hint.msg)}
+              onCopyText={copyTextToClipboard}
+              onCopyFailure={showClipboardFailure}
+              language={language}
+            />
           )}
         </section>
 
@@ -969,106 +825,121 @@ export function BlogWriterPage() {
           </div>
 
           <form className="blog-writer-chat__composer" onSubmit={handlePromptSubmit}>
-            <Input
-              label="Focus keyword"
-              value={focusKeyword}
-              onChange={(event) => {
-                setFocusKeyword(event.target.value);
-                if (formError) setFormError(null);
-              }}
-              placeholder="e.g. SaaS onboarding checklist"
-              {...textSurfaceProps}
-            />
-            {!selectedTopic && (
-              <Textarea
-                name="prompt"
-                value={prompt}
-                onChange={(event) => {
-                  setPrompt(event.target.value);
-                  if (formError) setFormError(null);
+            <div className="blog-writer-chat__composer-scroll">
+              <div className="blog-writer-chat__section">
+                <Input
+                  label="Focus keyword"
+                  value={focusKeyword}
+                  onChange={(event) => {
+                    setFocusKeyword(event.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="e.g. SaaS onboarding checklist"
+                  {...textSurfaceProps}
+                />
+                {!selectedTopic && (
+                  <Textarea
+                    name="prompt"
+                    value={prompt}
+                    onChange={(event) => {
+                      setPrompt(event.target.value);
+                      if (formError) setFormError(null);
+                    }}
+                    placeholder="Describe the blog you need, tone, and audience..."
+                    rows={3}
+                    maxLength={CONTENT_PROMPT_MAX_LENGTH}
+                    helperText={`${prompt.length}/${CONTENT_PROMPT_MAX_LENGTH} characters`}
+                    {...textSurfaceProps}
+                  />
+                )}
+                {formError && <p className="blog-writer-chat__error">{formError}</p>}
+              </div>
+
+              <div className="blog-writer-chat__section chat-options__group">
+                <span className="chat-options__label">Social captions</span>
+                <div className="chat-toggle-row">
+                  <button
+                    type="button"
+                    className={clsx('chip-toggle', includeInstagram && 'is-active')}
+                    aria-pressed={includeInstagram}
+                    onClick={() => setIncludeInstagram((prev) => !prev)}
+                  >
+                    Instagram
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('chip-toggle', includeLinkedIn && 'is-active')}
+                    aria-pressed={includeLinkedIn}
+                    onClick={() => setIncludeLinkedIn((prev) => !prev)}
+                  >
+                    LinkedIn
+                  </button>
+                </div>
+              </div>
+
+              <div className="blog-writer-chat__section chat-options__group">
+                <span className="chat-options__label">Images</span>
+                <div className="chat-toggle-row">
+                  <button
+                    type="button"
+                    className={clsx('chip-toggle', includeImage && 'is-active')}
+                    aria-pressed={includeImage}
+                    onClick={() => setIncludeImage((prev) => !prev)}
+                  >
+                    Blog/Featured
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('chip-toggle', includeLinkedInImage && 'is-active')}
+                    aria-pressed={includeLinkedInImage}
+                    onClick={() => setIncludeLinkedInImage((prev) => !prev)}
+                  >
+                    LinkedIn image
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('chip-toggle', includeInstagramImage && 'is-active')}
+                    aria-pressed={includeInstagramImage}
+                    onClick={() => setIncludeInstagramImage((prev) => !prev)}
+                  >
+                    Instagram image
+                  </button>
+                </div>
+                <Input
+                  label="Image prompt"
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  placeholder="Optional image direction"
+                  maxLength={IMAGE_PROMPT_MAX_LENGTH}
+                  helperText={`${imagePrompt.length}/${IMAGE_PROMPT_MAX_LENGTH} characters`}
+                  {...textSurfaceProps}
+                />
+                <Select
+                  label="Image style"
+                  value={imageStyle}
+                  onChange={(e) => setImageStyle(e.target.value as ImageStylePreset)}
+                  options={IMAGE_STYLE_OPTIONS}
+                />
+              </div>
+            </div>
+
+            <div className="blog-writer-chat__submit">
+              <Button
+                type="button"
+                className="blog-writer-send"
+                rightIcon={<FiSend />}
+                isLoading={isGenerating}
+                disabled={isGenerating}
+                onClick={(event) => {
+                  event.currentTarget.form?.requestSubmit();
                 }}
-                placeholder="Describe the blog you need, tone, and audience..."
-                rows={3}
-                maxLength={CONTENT_PROMPT_MAX_LENGTH}
-                helperText={`${prompt.length}/${CONTENT_PROMPT_MAX_LENGTH} characters`}
-                {...textSurfaceProps}
-              />
-            )}
-            {formError && <p className="blog-writer-chat__error">{formError}</p>}
-
-            <div className="chat-options__group">
-              <span className="chat-options__label">Social captions</span>
-              <div className="chat-toggle-row">
-                <button
-                  type="button"
-                  className={clsx('chip-toggle', includeInstagram && 'is-active')}
-                  aria-pressed={includeInstagram}
-                  onClick={() => setIncludeInstagram((prev) => !prev)}
-                >
-                  Instagram
-                </button>
-                <button
-                  type="button"
-                  className={clsx('chip-toggle', includeLinkedIn && 'is-active')}
-                  aria-pressed={includeLinkedIn}
-                  onClick={() => setIncludeLinkedIn((prev) => !prev)}
-                >
-                  LinkedIn
-                </button>
-              </div>
+              >
+                {isGenerating ? 'Generating...' : 'Send Prompt'}
+              </Button>
+              {isGenerating && generationStatus && (
+                <p className="blog-writer-chat__status">{generationStatus}</p>
+              )}
             </div>
-
-            <div className="chat-options__group">
-              <span className="chat-options__label">Images</span>
-              <div className="chat-toggle-row">
-                <button
-                  type="button"
-                  className={clsx('chip-toggle', includeImage && 'is-active')}
-                  aria-pressed={includeImage}
-                  onClick={() => setIncludeImage((prev) => !prev)}
-                >
-                  Blog/Featured
-                </button>
-                <button
-                  type="button"
-                  className={clsx('chip-toggle', includeLinkedInImage && 'is-active')}
-                  aria-pressed={includeLinkedInImage}
-                  onClick={() => setIncludeLinkedInImage((prev) => !prev)}
-                >
-                  LinkedIn image
-                </button>
-                <button
-                  type="button"
-                  className={clsx('chip-toggle', includeInstagramImage && 'is-active')}
-                  aria-pressed={includeInstagramImage}
-                  onClick={() => setIncludeInstagramImage((prev) => !prev)}
-                >
-                  Instagram image
-                </button>
-              </div>
-              <Input
-                label="Image prompt"
-                value={imagePrompt}
-                onChange={(e) => setImagePrompt(e.target.value)}
-                placeholder="Optional image direction"
-                maxLength={IMAGE_PROMPT_MAX_LENGTH}
-                helperText={`${imagePrompt.length}/${IMAGE_PROMPT_MAX_LENGTH} characters`}
-                {...textSurfaceProps}
-              />
-              <Select
-                label="Image style"
-                value={imageStyle}
-                onChange={(e) => setImageStyle(e.target.value as ImageStylePreset)}
-                options={IMAGE_STYLE_OPTIONS}
-              />
-            </div>
-
-            <Button type="submit" rightIcon={<FiSend />} isLoading={isGenerating} disabled={isGenerating}>
-              {isGenerating ? 'Generating...' : 'Send Prompt'}
-            </Button>
-            {isGenerating && generationStatus && (
-              <p className="blog-writer-chat__status">{generationStatus}</p>
-            )}
           </form>
         </section>
       </main>
@@ -1156,3 +1027,4 @@ export function BlogWriterPage() {
     </div>
   );
 }
+

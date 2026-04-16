@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
 import { FiClock, FiFileText, FiPenTool, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
@@ -10,7 +9,6 @@ import { ScheduleAPI } from '@/api/schedule';
 import type { ContentItem, ScheduleJob, Topic } from '@/types';
 import { extractErrorMessage } from '@/utils/error';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { AnalyticsWidget } from '@/components/dashboard/AnalyticsWidget';
 import { CalendarWidget } from '@/components/dashboard/CalendarWidget';
 import { TopicCard } from '@/components/dashboard/TopicCard';
 import { WriterCard } from '@/components/dashboard/WriterCard';
@@ -42,7 +40,14 @@ function countWords(text?: string | null): number {
     .filter(Boolean).length;
 }
 
-function buildFallbackTopics(userId: string, topics: Topic[], niche?: string, audience?: string, platform?: Topic['platform'], language?: Topic['language']): Topic[] {
+function buildFallbackTopics(
+  userId: string,
+  topics: Topic[],
+  niche?: string,
+  audience?: string,
+  platform?: Topic['platform'],
+  language?: Topic['language']
+): Topic[] {
   if (topics.length > 0) return topics;
   const selectedPlatform = platform ?? 'BLOG';
   const selectedLanguage = language ?? 'EN';
@@ -77,26 +82,6 @@ function buildFallbackTopics(userId: string, topics: Topic[], niche?: string, au
     createdAt: now,
     updatedAt: now
   }));
-}
-
-function buildAnalyticsData(content: ContentItem[]) {
-  const months = Array.from({ length: 6 }).map((_, idx) =>
-    dayjs().subtract(5 - idx, 'month').startOf('month')
-  );
-
-  return months.map((month, idx) => {
-    const items = content.filter((item) => dayjs(item.createdAt).isSame(month, 'month'));
-    const words = items.reduce((sum, item) => sum + countWords(item.text), 0);
-    const baseReach = 4000 + idx * 1400;
-    const reachBoost = words * 2.4;
-    const reach = Math.round(baseReach + reachBoost);
-    const engagement = Math.round(reach * 0.32 + idx * 90);
-    return {
-      label: month.format('MMM'),
-      reach,
-      engagement
-    };
-  });
 }
 
 export function DashboardPage() {
@@ -207,8 +192,6 @@ export function DashboardPage() {
 
   const timeSaved = useMemo(() => content.length * 45, [content.length]);
 
-  const analyticsData = useMemo(() => buildAnalyticsData(content), [content]);
-
   const scheduledDates = useMemo(
     () =>
       jobs
@@ -250,19 +233,13 @@ export function DashboardPage() {
   return (
     <div className="dashboard-page">
       <header className="dashboard-header">
-        <div>
+        <div className="dashboard-header__copy">
           <h1>Welcome back, {user?.name?.split(' ')[0] || 'Creator'}!</h1>
           <p>
             {businessProfile
-              ? `We’re using your ${businessProfile.niche} insights to surface the most relevant ideas for ${businessProfile.targetAudience}.`
-              : 'Let’s build momentum with fresh ideas, smarter AI drafts, and insightful analytics.'}
+              ? `We're using your ${businessProfile.niche} insights to surface the most relevant ideas for ${businessProfile.targetAudience}.`
+              : "Let's build momentum with fresh ideas and smarter AI drafts."}
           </p>
-        </div>
-        <div className="dashboard-toggle">
-          <span>Good vibes mode</span>
-          <div className="dashboard-toggle__switch">
-            <span />
-          </div>
         </div>
       </header>
 
@@ -292,34 +269,49 @@ export function DashboardPage() {
         </p>
       )}
 
-      <section className="dashboard-grid">
-        <AnalyticsWidget data={analyticsData} />
-        <CalendarWidget
-          scheduledDates={scheduledDates}
-          onDateClick={() => navigate('/schedule')}
-        />
+      <section className="dashboard-feature">
+        <div className="dashboard-section-heading dashboard-section-heading--writer">
+          <div>
+            <h2>Generate with our Writer</h2>
+            <p>Kickstart drafts tailored to your brand voice and audience.</p>
+          </div>
+        </div>
+        <div className="dashboard-feature__grid">
+          <WriterCard />
+          <CalendarWidget
+            scheduledDates={scheduledDates}
+            onDateClick={() => navigate('/schedule')}
+          />
+        </div>
       </section>
 
       <section className="dashboard-topics">
         <div className="dashboard-section-heading">
-          <div>
-            <h2>Suggested Topics for you</h2>
+          <div className="dashboard-section-heading__content">
+            <div className="dashboard-section-heading__title-row">
+              <h2>Suggested Topics for you</h2>
+              {generatingTopics && (
+                <span className="dashboard-inline-refresh">
+                  <FiRefreshCw />
+                  Refreshing...
+                </span>
+              )}
+            </div>
             <p>Curated using your business profile and recent performance insights.</p>
           </div>
           {businessProfile && (
             <Button
               type="button"
               variant="ghost"
-              
+              className="dashboard-refresh-btn"
               leftIcon={<FiRefreshCw />}
-              isLoading={generatingTopics}
               disabled={generatingTopics}
               onClick={() => {
                 setAttemptedAutoGenerate(true);
                 generateTopics();
               }}
             >
-              {generatingTopics ? 'Refreshing…' : 'Refresh topics'}
+              Refresh topics
             </Button>
           )}
         </div>
@@ -331,14 +323,6 @@ export function DashboardPage() {
             <TopicCard key={topic.id} topic={topic} onSelect={handleTopicSelect} />
           ))}
         </div>
-      </section>
-
-      <section className="dashboard-writer">
-        <div className="dashboard-section-heading">
-          <h2>Generate with our Writer</h2>
-          <p>Kickstart drafts tailored to your brand voice and audience.</p>
-        </div>
-        <WriterCard />
       </section>
     </div>
   );

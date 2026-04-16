@@ -37,7 +37,7 @@ export function CalendarWidget({ scheduledDates = [], onDateClick }: CalendarWid
   const scheduledSet = useMemo(() => new Set(scheduledDates), [scheduledDates]);
 
   return (
-    <div className="calendar-widget glass-card">
+    <div className="calendar-widget">
       <header>
         <h3>{monthLabel}</h3>
         <div className="calendar-widget__nav">
@@ -63,14 +63,14 @@ export function CalendarWidget({ scheduledDates = [], onDateClick }: CalendarWid
             {day}
           </span>
         ))}
-        {weeks.flat().map((date) => {
+        {weeks.flat().map((date, index) => {
           const iso = date.format('YYYY-MM-DD');
           const isCurrentMonth = date.month() === currentMonth.month();
           const isToday = date.isSame(today, 'day');
           const isScheduled = scheduledSet.has(iso);
           return (
             <button
-              key={date.toString()}
+              key={`${iso}-${index}`}
               type="button"
               className={[
                 'calendar-widget__day',

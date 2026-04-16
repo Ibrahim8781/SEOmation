@@ -15,6 +15,7 @@ export function MetricCard({ label, value, icon, accent = 'blue' }: MetricCardPr
       <div className="metric-card__content">
         <span className="metric-card__label">{label}</span>
         <strong className="metric-card__value">{value}</strong>
+        <span className="metric-card__period">This month</span>
       </div>
     </div>
   );

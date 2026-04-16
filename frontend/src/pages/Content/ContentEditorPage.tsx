@@ -4,10 +4,9 @@ import { FiChevronDown, FiClock, FiImage, FiLoader, FiSave, FiSend } from 'react
 import { ContentAPI, type GenerateImagePayload } from '@/api/content';
 import { IntegrationsAPI } from '@/api/integrations';
 import { ScheduleAPI, type PublishPayload, type SchedulePayload } from '@/api/schedule';
-import { RichTextEditor } from '@/components/editor/RichTextEditor';
+import { DraftOutputTabs } from '@/components/content/DraftOutputTabs';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
@@ -85,9 +84,6 @@ function formatPlatformLabel(platform: IntegrationPlatform) {
   return platform;
 }
 
-const META_DESCRIPTION_MIN_LENGTH = 140;
-const META_DESCRIPTION_MAX_LENGTH = 160;
-
 function toSecondary(input: string): string[] {
   if (!input) return [];
   return input
@@ -156,38 +152,17 @@ export function ContentEditorPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<IntegrationPlatform>('WORDPRESS');
   const [scheduledTime, setScheduledTime] = useState('');
   const [publishing, setPublishing] = useState(false);
+  const [showOutputViewer, setShowOutputViewer] = useState(true);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<EditorSnapshot | null>(null);
   const scoreTimer = useRef<number | null>(null);
   const imageLongWaitTimer = useRef<number | null>(null);
   const publishLongWaitTimer = useRef<number | null>(null);
   const publishIntent = (location.state as { openPublishModal?: boolean } | null)?.openPublishModal;
-  const [activeSidePanel, setActiveSidePanel] = useState<'seo' | 'images' | 'publishing'>('seo');
+  const [activeSidePanel, setActiveSidePanel] = useState<'seo' | 'images' | 'publishing' | null>(null);
   const scheduleTimeZone = resolveScheduleTimeZone(user?.timezone);
   const contentLanguage = content?.language ?? user?.language ?? 'EN';
   const textSurfaceProps = useMemo(() => getTextSurfaceProps(contentLanguage), [contentLanguage]);
-  const metaDescriptionHelperText = useMemo(() => {
-    const length = metaDescription.trim().length;
-    if (!length) {
-      return `0 characters • Recommended: ${META_DESCRIPTION_MIN_LENGTH}-${META_DESCRIPTION_MAX_LENGTH}`;
-    }
-    if (length < META_DESCRIPTION_MIN_LENGTH) {
-      return `${length} characters • ${META_DESCRIPTION_MIN_LENGTH - length} below recommended minimum`;
-    }
-    if (length > META_DESCRIPTION_MAX_LENGTH) {
-      return `${length} characters • ${length - META_DESCRIPTION_MAX_LENGTH} above recommended maximum`;
-    }
-    return `${length} characters • Ideal length`;
-  }, [metaDescription]);
-  const linkedInHelperText = useMemo(() => {
-    const length = linkedinText.trim().length;
-    if (!length) {
-      return `0/${LINKEDIN_POST_MAX_LENGTH} characters`;
-    }
-    if (length > LINKEDIN_POST_MAX_LENGTH) {
-      return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters • ${length - LINKEDIN_POST_MAX_LENGTH} over LinkedIn's limit`;
-    }
-    return `${length}/${LINKEDIN_POST_MAX_LENGTH} characters`;
-  }, [linkedinText]);
+
 
   const clearImageLongWaitTimer = () => {
     if (imageLongWaitTimer.current) {
@@ -593,6 +568,22 @@ export function ContentEditorPage() {
   };
 
   const seoComponents = seoSummary?.components ?? [];
+  const outputImages = useMemo(
+    () =>
+      images.map((item) => ({
+        id: item.id,
+        url: item.image.url,
+        caption: item.image.altText || 'AI generated image'
+      })),
+    [images]
+  );
+  const seoBreakdown = useMemo(
+    () => seoComponents.map((component) => component.message).filter(Boolean),
+    [seoComponents]
+  );
+  const lastUpdatedLabel = content?.updatedAt
+    ? `Last updated ${new Date(content.updatedAt).toLocaleString()}`
+    : 'Not saved yet';
   const latestJob = useMemo(() => jobs.find((job) => job.contentId === id), [jobs, id]);
   const selectedImagesByPlatform = useMemo(
     () => ({
@@ -621,6 +612,10 @@ export function ContentEditorPage() {
       if (target.key === 'LINKEDIN') return selectedLinkedinImage === imageId;
       return selectedInstagramImage === imageId;
     });
+
+  const toggleSidePanel = (panel: 'seo' | 'images' | 'publishing') => {
+    setActiveSidePanel((current) => (current === panel ? null : panel));
+  };
 
   useEffect(() => {
     if (!isDirty) return;
@@ -695,66 +690,58 @@ export function ContentEditorPage() {
 
       <div className="content-editor-grid">
         <section className="content-editor-main glass-card">
-          <div className="form-grid">
-            <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} {...textSurfaceProps} />
-            <Input
-              label="Primary keyword"
-              value={primaryKeyword}
-              onChange={(e) => setPrimaryKeyword(e.target.value)}
-              {...textSurfaceProps}
-            />
-          </div>
-          <Textarea
-            label="Meta description"
-            value={metaDescription}
-            onChange={(e) => setMetaDescription(e.target.value)}
-            rows={2}
-            helperText={metaDescriptionHelperText}
-            {...textSurfaceProps}
-          />
-          <RichTextEditor
-            label="Body"
-            value={bodyHtml}
-            onChange={setBodyHtml}
-            helperText="Write visually, preview the rendered article, or switch to raw HTML for precise control."
-            language={contentLanguage}
-          />
-          <Input
-            label="Secondary keywords (comma separated)"
-            value={secondaryKeywordsInput}
-            onChange={(e) => {
-              const rawValue = e.target.value;
-              setSecondaryKeywordsInput(rawValue);
-              setSecondaryKeywords(toSecondary(rawValue));
-            }}
-            {...textSurfaceProps}
-          />
-          <div className="form-grid">
-            <Textarea
-              label="LinkedIn post"
-              rows={4}
-              value={linkedinText}
-              onChange={(e) => setLinkedinText(e.target.value)}
-              maxLength={LINKEDIN_POST_MAX_LENGTH}
-              helperText={linkedInHelperText}
-              {...textSurfaceProps}
-            />
-            <Textarea
-              label="Instagram caption"
-              rows={4}
-              value={instagramText}
-              onChange={(e) => setInstagramText(e.target.value)}
-              {...textSurfaceProps}
-            />
-          </div>
-          <div className="content-editor-footer">
-            <div className="content-editor-meta">
-              <FiClock /> Last updated {content ? new Date(content.updatedAt).toLocaleString() : '--'} • Ctrl/Cmd+S to save
+          <div className="content-editor-outputs">
+            <div className="content-editor-outputs__header">
+              <div>
+                <h2>Generated outputs</h2>
+                <p>Review blog, social captions, images, and SEO score in one consistent tab view.</p>
+              </div>
+              <Button variant="ghost" onClick={() => setShowOutputViewer((prev) => !prev)}>
+                {showOutputViewer ? 'Hide outputs' : 'Show outputs'}
+              </Button>
             </div>
-            <Button variant="secondary" onClick={handleSave} isLoading={saving}>
-              Save changes
-            </Button>
+            {showOutputViewer && (
+              <DraftOutputTabs
+                className="content-editor-outputs__tabs"
+                title={title}
+                onTitleChange={setTitle}
+                primaryKeyword={primaryKeyword}
+                onPrimaryKeywordChange={setPrimaryKeyword}
+                metaDescription={metaDescription}
+                onMetaDescriptionChange={setMetaDescription}
+                secondaryKeywords={secondaryKeywordsInput}
+                onSecondaryKeywordsChange={(value) => {
+                  setSecondaryKeywordsInput(value);
+                  setSecondaryKeywords(toSecondary(value));
+                }}
+                blogHtml={bodyHtml}
+                onBlogHtmlChange={setBodyHtml}
+                onSaveDraft={handleSave}
+                onPublishSchedule={() => setPublishModalOpen(true)}
+                saveBusy={saving}
+                publishBusy={publishing}
+                saveDisabled={!id || saving}
+                publishDisabled={!id || saving || publishing}
+                lastUpdatedLabel={lastUpdatedLabel}
+                instagramText={instagramText}
+                onInstagramTextChange={setInstagramText}
+                instagramLimit={2200}
+                linkedinText={linkedinText}
+                onLinkedinTextChange={setLinkedinText}
+                linkedinLimit={LINKEDIN_POST_MAX_LENGTH}
+                images={outputImages}
+                imagesLoading={imageLoading}
+                imagesRegenerating={imageLoading}
+                imageLoadingLabel={imageLoadingMessage || 'Generating images...'}
+                imagesEmptyLabel="No images are attached to this draft yet."
+                onRegenerateImages={handleGenerateImages}
+                seoScore={seoSummary ? Math.round(seoSummary.total) : null}
+                seoBreakdown={seoBreakdown}
+                language={contentLanguage}
+              />
+            )}
           </div>
+
         </section>
 
         <aside className="content-editor-sidebar">
@@ -762,7 +749,7 @@ export function ContentEditorPage() {
             <button
               type="button"
               className="editor-side-panel__header"
-              onClick={() => setActiveSidePanel('seo')}
+              onClick={() => toggleSidePanel('seo')}
             >
               <span>SEO</span>
               <FiChevronDown className={activeSidePanel === 'seo' ? 'rotated' : ''} aria-hidden />
@@ -800,7 +787,7 @@ export function ContentEditorPage() {
             <button
               type="button"
               className="editor-side-panel__header"
-              onClick={() => setActiveSidePanel('images')}
+              onClick={() => toggleSidePanel('images')}
             >
               <span>Images</span>
               <FiChevronDown className={activeSidePanel === 'images' ? 'rotated' : ''} aria-hidden />
@@ -822,7 +809,7 @@ export function ContentEditorPage() {
                       helperText={`${imagePrompt.length}/${IMAGE_PROMPT_MAX_LENGTH} characters`}
                       {...textSurfaceProps}
                     />
-                    <div className="form-grid">
+                    <div className="images-form-grid images-form-grid--two">
                       <Select
                         label="Style"
                         value={imageStyle}
@@ -839,35 +826,33 @@ export function ContentEditorPage() {
                           { label: 'Instagram', value: 'instagram' }
                         ]}
                       />
-                      <Input
-                        label="Alt text"
-                        value={imageAlt}
-                        onChange={(e) => setImageAlt(e.target.value)}
-                        placeholder="Describe the image"
-                        {...textSurfaceProps}
-                      />
                     </div>
-                    <div className="form-grid">
-                      <Input
-                        type="number"
-                        min={1}
-                        max={4}
-                        label="Count"
-                        value={imageCount}
-                        onChange={(e) => setImageCount(Number(e.target.value))}
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        leftIcon={<FiImage />}
-                        onClick={handleGenerateImages}
-                        isLoading={imageLoading}
-                      >
-                        Generate
-                      </Button>
-                    </div>
+                    <Input
+                      label="Alt text"
+                      value={imageAlt}
+                      onChange={(e) => setImageAlt(e.target.value)}
+                      placeholder="Describe the image"
+                      {...textSurfaceProps}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={4}
+                      label="Count"
+                      value={imageCount}
+                      onChange={(e) => setImageCount(Number(e.target.value))}
+                    />
+                    <Button
+                      type="button"
+                      className="images-generate-button"
+                      leftIcon={<FiImage />}
+                      onClick={handleGenerateImages}
+                      isLoading={imageLoading}
+                    >
+                      Generate
+                    </Button>
                     {imageLoadingMessage && <p className="muted">{imageLoadingMessage}</p>}
-                    <label className="upload-label">
+                    <label className="upload-link">
                       <input
                         type="file"
                         accept="image/*"
@@ -882,7 +867,7 @@ export function ContentEditorPage() {
                       {publishImageTargets.map((target) => {
                         const selectedImage = selectedImagesByPlatform[target.key];
                         return (
-                          <div key={target.key} className="image-assignment-row glass-card">
+                          <div key={target.key} className="image-assignment-row">
                             <div className="image-assignment-row__meta">
                               <p>{target.label}</p>
                               <strong>{selectedImage ? selectedImage.image.altText || 'Selected image' : 'No image selected'}</strong>
@@ -901,22 +886,22 @@ export function ContentEditorPage() {
                   )}
                   <div className="images-grid">
                     {images.map((item) => (
-                      <figure key={item.id} className="image-card glass-card">
+                      <figure key={item.id} className="image-card">
                         <img src={item.image.url} alt={item.image.altText ?? 'content image'} />
                         <figcaption>
                           <div className="image-card__meta">
                             <span className="image-role">{roleLabel[item.role] || 'Image'}</span>
-                            {imageAssignmentsForCard(item.id).length > 0 && (
-                              <div className="image-card__badges">
-                                {imageAssignmentsForCard(item.id).map((target) => (
-                                  <span key={target.key} className="image-card__badge">
-                                    {target.label}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
                           </div>
                           <p className="image-card__title">{item.image.altText || 'No alt text'}</p>
+                          {imageAssignmentsForCard(item.id).length > 0 && (
+                            <div className="image-card__badges">
+                              {imageAssignmentsForCard(item.id).map((target) => (
+                                <span key={target.key} className="image-card__badge">
+                                  {target.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {imageAssignmentsForCard(item.id).length > 0 && (
                             <p className="image-card__hint">Selected for {imageAssignmentsForCard(item.id).map((target) => target.label).join(', ')}</p>
                           )}
@@ -942,6 +927,7 @@ export function ContentEditorPage() {
                           <Button
                             variant="ghost"
                             size="md"
+                            className="image-remove-link"
                             onClick={() => handleDeleteImage(item.id)}
                             disabled={imageLoading}
                           >
@@ -961,7 +947,7 @@ export function ContentEditorPage() {
             <button
               type="button"
               className="editor-side-panel__header"
-              onClick={() => setActiveSidePanel('publishing')}
+              onClick={() => toggleSidePanel('publishing')}
             >
               <span>Publishing</span>
               <FiChevronDown className={activeSidePanel === 'publishing' ? 'rotated' : ''} aria-hidden />
@@ -1105,3 +1091,5 @@ function normalizeLinkedInDraftText(value: string) {
   if (text.length <= LINKEDIN_POST_MAX_LENGTH) return text;
   return text.slice(0, LINKEDIN_POST_MAX_LENGTH).trimEnd();
 }
+
+
